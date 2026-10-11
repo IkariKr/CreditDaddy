@@ -83,6 +83,14 @@ test('tokenharbor 账号不落入 Qoder 页签（productOf 守卫，面板列表
   assert.notEqual(productOf('tokenharbor'), 'qoder');
 });
 
+test('verifyProbeHtml：浏览器探针产 HTML 的纯文本判定(marker / 登录页壳)', async () => {
+  const { verifyProbeHtml } = await import('../src/cookieSites.js');
+  const site = COOKIE_SITES[0];
+  assert.equal(verifyProbeHtml(site, '<html><h1>Free allowance 40% used</h1></html>').ok, true);
+  assert.equal(verifyProbeHtml(site, '<html><form action="/login">Sign in</form></html>').reason, 'invalid');
+  assert.equal(verifyProbeHtml(site, '<html><body>crypto challenge page</body></html>').reason, 'no-match');
+});
+
 test('daemon 捕获端点：探测通过入库去重；401 拒绝；/api/cookie-sites 报捕获时间', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'creditdaddy-csite-e2e-'));
   await fs.writeFile(path.join(home, 'settings.json'), JSON.stringify({ panelKey: '', panelKeyHash: '' }));

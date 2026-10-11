@@ -262,6 +262,7 @@
   "{label}「{plan}」验证码未完成:{err}(可在面板手动领取)": "{label}「{plan}」の認証コードが完了しませんでした:{err}(パネルで手動で受け取れます)",
   "{label}「{plan}」验证码未完成:{err}（可在面板手动领取）": "{label}「{plan}」の認証コードが完了しませんでした:{err}(パネルで手動で受け取れます)",
   "{label}「{plan}」已领取过": "{label}「{plan}」は受け取り済みです",
+  "{name} 浏览器探针未中(reason={reason}) head={head}": "{name} ブラウザ探针未中(reason={reason}) head={head}",
   "{name} cookie 捕获被拒:{reason}": "{name} cookie 取得が拒否されました:{reason}",
   "{name} cookie 捕获成功，同步到 10Router 后卡片点亮": "{name} cookie 取得成功。10Router に同期するとカードが有効になります",
   "{name} cookie 捕获成功(探测通过,同步到 10Router 后卡片点亮)": "{name} cookie 取得成功(検証通過)。10Router に同期するとカードが有効になります",

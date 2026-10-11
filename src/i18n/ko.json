@@ -262,6 +262,7 @@
   "{label}「{plan}」验证码未完成:{err}(可在面板手动领取)": "{label}「{plan}」 인증 코드 미완료: {err} (패널에서 수동으로 수령 가능)",
   "{label}「{plan}」验证码未完成:{err}（可在面板手动领取）": "{label}「{plan}」 인증 코드 미완료: {err} (패널에서 수동으로 수령 가능)",
   "{label}「{plan}」已领取过": "{label}「{plan}」 이미 수령함",
+  "{name} 浏览器探针未中(reason={reason}) head={head}": "{name} 브라우저 탐지 실패(reason={reason}) head={head}",
   "{name} cookie 捕获被拒:{reason}": "{name} cookie 캡처 거부됨: {reason}",
   "{name} cookie 捕获成功，同步到 10Router 后卡片点亮": "{name} cookie 캡처 완료. 10Router로 동기화하면 카드가 켜집니다",
   "{name} cookie 捕获成功(探测通过,同步到 10Router 后卡片点亮)": "{name} cookie 캡처 성공(탐지 통과). 10Router로 동기화하면 카드가 켜집니다",

@@ -639,15 +639,37 @@ async function harvestQoderWebSession(ses) {
   }
 }
 
+/** #23：浏览器隐藏窗探针——同一会话内加载 dashboard,轮询配额标记(绕 Node 的 TLS/UA/CSR 差异) */
+async function probeViaHiddenWindow(ses, site, timeoutMs = 20000) {
+  let w = null;
+  try {
+    w = new BrowserWindow({ show: false, width: 480, height: 640, webPreferences: { session: ses, sandbox: true } });
+    await w.webContents.loadURL(site.probe.url);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const html = await w.webContents.executeJavaScript('document.documentElement ? document.documentElement.outerHTML : ""').catch(() => '');
+      if (html && html.includes(site.probe.match)) return html;
+      // 登录页壳出现 = 会话被拒,提前终止(与 daemon 的 invalid 分类对齐)
+      if (html && /sign\s?in|log\s?in/i.test(html) && html.length > 500) return html;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    // 超时兜底:把当前 HTML(可能是风控挑战/空壳)也一并上送,便于区分猫眼
+    return await w.webContents.executeJavaScript('document.documentElement ? document.documentElement.outerHTML : ""').catch(() => null);
+  } catch { return null; }
+  finally { try { if (w && !w.isDestroyed()) w.destroy(); } catch { /* ignore */ } }
+}
+
 /** #23：通用 cookie 站点收割——隐私会话里的全量 cookie 串成 plain string,交给 daemon 探测入库 */
 async function harvestCookieSiteSession(ses, site) {
   const cookies = await ses.cookies.get({ url: site.homeUrl }).catch(() => []);
   const cookie = cookieSitesLib.serializeCookies(cookies);
   const key = (daemonMod && typeof daemonMod.getSessionKey === 'function' && daemonMod.getSessionKey()) || (daemonMod && typeof daemonMod.getPanelKey === 'function' ? daemonMod.getPanelKey() : '');
+  // 先拿浏览器视角 HTML(Node 探测会拿风控/空壳,造成「登录明明成功却报会话无效」)
+  const probeHtml = await probeViaHiddenWindow(ses, site).catch(() => null);
   const r = await fetch('http://127.0.0.1:' + boundPort + '/api/cookie-sites/' + site.id + '/capture', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(key ? { 'x-qd-key': key } : {}) },
-    body: JSON.stringify({ cookie, diag: { cookieCount: (cookies || []).length } }),
+    body: JSON.stringify({ cookie, diag: { cookieCount: (cookies || []).length }, probeHtml }),
   }).catch(() => null);
   if (r && r.ok) {
     try { if (win && !win.isDestroyed()) win.webContents.send('cookie-site:captured', { site: site.id, name: site.name, ok: true }); } catch { /* ignore */ }

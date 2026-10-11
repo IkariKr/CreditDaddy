@@ -55,7 +55,7 @@ import { productImpl } from './providers.js';
 import { readWorkbuddySessions, writeWorkbuddySession, workbuddyAuthDir, currentWorkbuddyUid } from './workbuddyLocal.js';
 import { refreshWorkbuddyToken } from './workbuddyClient.js';
 import { loadBuildInfo } from './buildInfo.js';
-import { COOKIE_SITES, getSite, verifySiteCookie } from './cookieSites.js';
+import { COOKIE_SITES, getSite, verifySiteCookie, verifyProbeHtml } from './cookieSites.js';
 import { liveToAccount as zcodeLiveAccount, switchTo as zcodeSwitchTo, currentZcodeUid, currentZcodeIdentity, detectZcode, ensureVirtualDeviceMid, terminateZcode, zcodeRunning } from './zcodeLocal.js';
 import { liveToAccount as mirasimLiveAccount, switchTo as mirasimSwitchTo, currentMirasimUid, detectMirasim, terminateMirasim, mirasimRunning } from './mirasimLocal.js';
 import { liveToAccount as catpawLiveAccount, switchTo as catpawSwitchTo, currentCatpawToken, detectCatpaw, terminateCatpaw } from './catpawLocal.js';
@@ -794,7 +794,15 @@ async function handleApi(req, res, url) {
     logger.info('COOKIE-SITE', '{name} cookie 收割上报({count} 条)', { name: site.name, count: typeof count === 'number' ? count : '-' });
     if (!cookie || cookie.length > 32768) return json(res, 400, { error: 'cookie 不能为空，请重新登录后再捕获' });
 
-    const probe = await verifySiteCookie(site, cookie);
+    // 探测策略:桌面壳隐藏 Chromium 窗口探针产的 probeHtml 优先(真浏览器视角,过风控);
+    // 无 probeHtml(CLI / 非桌面)回退 Node fetch 探测(fetchJsonRace,跟全局代理)。
+    const probeHtml = typeof body?.probeHtml === 'string' && body.probeHtml.length > 0 && body.probeHtml.length < 4 * 1024 * 1024 ? body.probeHtml : null;
+    const probe = probeHtml ? verifyProbeHtml(site, probeHtml) : await verifySiteCookie(site, cookie);
+    if (probeHtml && !probe.ok) {
+      // 临时调试:浏览器探针页首 120 字进日志,便于区分「风控挑战页 / 登录页壳 / 结构变化」三元
+      const dbg = JSON.stringify(String(body.probeHtml).replace(/\s+/g, ' ').slice(0, 120));
+      logger.warn('COOKIE-SITE', '{name} 浏览器探针未中(reason={reason}) head={head}', { name: site.name, reason: probe.reason, head: dbg });
+    }
     if (!probe.ok) {
       const reason = probe.reason === 'invalid' ? '探测 401/403（会话无效）'
         : probe.reason === 'no-match' ? '探测页面缺少配额标记（登录未完成或已登出）'

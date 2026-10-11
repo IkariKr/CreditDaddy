@@ -91,3 +91,15 @@ export async function verifySiteCookie(site, cookie, { fetchImpl } = {}) {
     return { ok: false, reason: 'network', error: e?.message || String(e) };
   }
 }
+
+/**
+ * 用「浏览器出品的 HTML」做探针(credit 桌面壳隐藏 Chromium 窗口的 probeHtml)——
+ * 不经任何网络层,标记判定与网络探针完全同款(marker / 登录页壳分类),只做纯文本判断。
+ */
+export function verifyProbeHtml(site, html) {
+  const text = String(html || '');
+  if (site.probe.match && !text.includes(site.probe.match)) {
+    return { ok: false, reason: looksLikeLoginPage(text) ? 'invalid' : 'no-match' };
+  }
+  return { ok: true };
+}
