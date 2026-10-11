@@ -2402,6 +2402,48 @@ function trSetupHtml() {
     + '<button class="btn primary" data-tr="settings">' + I.plus + T('配置 10Router</button></div>');
 }
 
+// ── cookie 站点登录捕获(issue #23):tokenharbor 这类「额度只在网页 dashboard」的供应商 ──
+state.cookieSites = state.cookieSites || null;
+async function loadCookieSites(force) {
+  if (state.cookieSites && !force) return state.cookieSites;
+  try { state.cookieSites = (await api('/api/cookie-sites')).sites || []; } catch { state.cookieSites = state.cookieSites || []; }
+  return state.cookieSites;
+}
+function cookieSitesHtml() {
+  const sites = state.cookieSites;
+  const canCapture = Boolean(window.creditdaddy && typeof window.creditdaddy.openAuthWindow === 'function');
+  if (sites && !sites.length) return '';
+  const rows = (sites || []).map((site) => {
+    const acc = (state.accounts || []).find((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id);
+    const stateTxt = acc
+      ? T('<span class="dim">已捕获 ') + esc(fmtTime(acc.meta.cookieSiteSession?.capturedAt || acc.updatedAt)) + '</span>'
+      : T('<span class="dim">未捕获——桌面版点「登录捕获」完成登录后自动收割</span>');
+    const btn = canCapture
+      ? T('<button class="btn" data-tr="cookie-site" data-id="') + esc(site.id) + T('">登录捕获</button>')
+      : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">登录捕获</button>');
+    return T('<div class="stat" style="border:1px solid var(--border-subtle);border-radius:10px;padding:8px 10px">')
+      + T('<span><b>') + esc(site.label || site.name) + '</b> ' + stateTxt + '</span>' + btn + '</div>'
+      + (site.hint ? T('<div class="hint" style="grid-column:1/-1">') + esc(site.hint) + '</div>' : '');
+  }).join('');
+  return rows
+    ? T('<div class="summary" style="margin:8px 0 6px;display:grid;gap:8px">') + rows + '</div>'
+    : '';
+}
+async function cookieSiteCapture(siteId) {
+  const site = (state.cookieSites || []).find((x) => x.id === siteId);
+  if (!site || !window.creditdaddy || typeof window.creditdaddy.openAuthWindow !== 'function') return;
+  const r = await window.creditdaddy.openAuthWindow(site.loginUrl);
+  if (!r || r.ok !== true) toast(T('打开登录窗口失败：') + ((r && r.error) || ''), false);
+}
+if (window.creditdaddy && typeof window.creditdaddy.onCookieCaptured === 'function') {
+  window.creditdaddy.onCookieCaptured(({ name }) => {
+    toast(T('{name} cookie 捕获成功，同步到 10Router 后卡片点亮', { name: name || '' }), true);
+    state.cookieSites = null;
+    Promise.allSettled([loadCookieSites(true), refreshAccountList(), loadTrQuotas(true)])
+      .then(() => { if (state.view === 'tenrouter') renderTenrouter(); renderDash(); });
+  });
+}
+
 function renderTenrouter() {
   const box = $('tr-panel');
   const c = tr.config;
@@ -2468,7 +2510,9 @@ function renderTenrouter() {
     + T('<button class="btn" data-tr="settings">设置</button>')
     + '</div></div>'
     + tabStrip
+    + cookieSitesHtml()
     + '<div class="tr-grid">' + grid + '</div>';
+  if (!state.cookieSites) loadCookieSites().then(() => { if (state.view === 'tenrouter') renderTenrouter(); });
 }
 
 function trDashCard() {

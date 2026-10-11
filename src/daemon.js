@@ -48,13 +48,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logger, getLogs, readArchiveJsonl } from './logger.js';
 import {
-  loadAccounts, loadState, withAccounts, publicAccount, dataDir, loadSettings, saveSettings, withSettings,
+  loadAccounts, loadState, withAccounts, publicAccount, dataDir, loadSettings, saveSettings, withSettings, normalizeAccountInput,
 } from './store.js';
 import { addAccount, importAccounts, refreshContext } from './accounts.js';
 import { productImpl } from './providers.js';
 import { readWorkbuddySessions, writeWorkbuddySession, workbuddyAuthDir, currentWorkbuddyUid } from './workbuddyLocal.js';
 import { refreshWorkbuddyToken } from './workbuddyClient.js';
 import { loadBuildInfo } from './buildInfo.js';
+import { COOKIE_SITES, getSite, verifySiteCookie } from './cookieSites.js';
 import { liveToAccount as zcodeLiveAccount, switchTo as zcodeSwitchTo, currentZcodeUid, currentZcodeIdentity, detectZcode, ensureVirtualDeviceMid, terminateZcode, zcodeRunning } from './zcodeLocal.js';
 import { liveToAccount as mirasimLiveAccount, switchTo as mirasimSwitchTo, currentMirasimUid, detectMirasim, terminateMirasim, mirasimRunning } from './mirasimLocal.js';
 import { liveToAccount as catpawLiveAccount, switchTo as catpawSwitchTo, currentCatpawToken, detectCatpaw, terminateCatpaw } from './catpawLocal.js';
@@ -767,6 +768,60 @@ async function handleApi(req, res, url) {
       logger.info('DAEMON', '已绑定 Qoder 网页会话到 {n} 个账号(逐资源包明细可用)', { n: bound });
     }
     return json(res, 200, { ok: true, bound });
+  }
+
+  // ── 通用 cookie 站点捕获(issue #23):登录窗口收割 → 探测 → 入账号库(provider=site.provider)
+  if (p === '/api/cookie-sites' && method === 'GET') {
+    const accounts = await loadAccounts();
+    return json(res, 200, {
+      sites: COOKIE_SITES.map((site) => {
+        const acc = accounts.find((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id);
+        return {
+          id: site.id, name: site.name, label: site.label, loginUrl: site.loginUrl, hint: site.hint,
+          accountId: acc?.id || null, capturedAt: acc?.meta?.cookieSiteSession?.capturedAt || null,
+        };
+      }),
+    });
+  }
+
+  if (p.startsWith('/api/cookie-sites/') && p.endsWith('/capture') && method === 'POST') {
+    const siteId = p.slice('/api/cookie-sites/'.length, -'/capture'.length);
+    const site = getSite(siteId);
+    if (!site) return json(res, 404, { error: `站点 ${siteId} 未配置` });
+    const body = await readBody(req).catch(() => ({}));
+    const cookie = String(body?.cookie || '').trim();
+    const count = body?.diag?.cookieCount;
+    logger.info('COOKIE-SITE', '{name} cookie 收割上报({count} 条)', { name: site.name, count: typeof count === 'number' ? count : '-' });
+    if (!cookie || cookie.length > 32768) return json(res, 400, { error: 'cookie 不能为空，请重新登录后再捕获' });
+
+    const probe = await verifySiteCookie(site, cookie);
+    if (!probe.ok) {
+      const reason = probe.reason === 'invalid' ? '探测 401/403（会话无效）'
+        : probe.reason === 'no-match' ? '探测页面缺少配额标记（登录未完成或已登出）'
+        : `探测失败（${probe.reason}${probe.status ? ' HTTP ' + probe.status : ''}）`;
+      logger.warn('COOKIE-SITE', '{name} cookie 捕获被拒:{reason}', { name: site.name, reason });
+      return json(res, probe.reason === 'invalid' ? 401 : probe.reason === 'no-match' ? 422 : 502, { error: probe.reason === 'invalid' ? '会话不可用，请重新登录该站点后再捕获（探测 401/403）' : probe.reason === 'no-match' ? '捕获的会话缺少预期页面标记（可能登录未完成），请重试' : '探测站点失败：' + (probe.error || reason) });
+    }
+
+    const now = new Date().toISOString();
+    let accountId = null;
+    await withAccounts((list) => {
+      const hit = list.find((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id);
+      if (hit) {
+        hit.token = cookie;
+        hit.meta = { ...(hit.meta || {}), cookieSiteSession: { cookie, capturedAt: now } };
+        hit.updatedAt = now;
+        if (!hit.name) hit.name = site.accountName;
+        accountId = hit.id;
+      } else {
+        const acc = normalizeAccountInput({ name: site.accountName, provider: site.provider, token: cookie, source: 'web-session', meta: { cookieSiteId: site.id, cookieSiteSession: { cookie, capturedAt: now } } });
+        acc.verified = true;
+        list.push(acc);
+        accountId = acc.id;
+      }
+    });
+    logger.info('COOKIE-SITE', '{name} cookie 捕获成功(探测通过,同步到 10Router 后卡片点亮)', { name: site.name });
+    return json(res, 200, { ok: true, accountId });
   }
 
   // ── 本机检测 / 凭据扫描 ──

@@ -1,0 +1,68 @@
+/**
+ * 通用「浏览器站点 cookie 捕获」（issue #23）——配置驱动的首个接入方：Token Harbor。
+ *
+ * 适用面：额度/信息只存在于登录后的 dashboard HTML、凭据只能是浏览器会话 cookie 的供应商。
+ * 配置表加一行即可接入新站点（登录页 URL / 收割域 / 探测规则），10Router 侧零改动——
+ * 同步走既有 `providerSpecificData.creditDaddyWebSession.cookie` 传输（与 qoder 同形状）。
+ *
+ * 测试用后门（仅测试改动探测地址）：环境变量 `CD_PROBE_<站点 id 大写,非字母数字→_>`，
+ * 如 CD_PROBE_TOKENHARBOR 指向本地假站。生产配置永远取 probe.url。
+ */
+
+import { fetchJsonRace } from './zcodeClient.js';
+
+export const COOKIE_SITES = [
+  {
+    id: 'tokenharbor',
+    name: 'Token Harbor',
+    provider: 'tokenharbor',
+    label: 'Token Harbor 免费额度（10Router 卡片）',
+    loginUrl: 'https://tokenharbor.ai/login',
+    homeUrl: 'https://tokenharbor.ai',
+    probe: { url: 'https://tokenharbor.ai/dashboard', match: 'Free allowance' },
+    accountName: 'Token Harbor 网页会话',
+    hint: '登录后 dashboard 才有 Free allowance 配额；凭据只存本机（账号库加密），同步到 10Router 时按 creditDaddyWebSession 形状传输。',
+  },
+];
+
+export const getSite = (id) => COOKIE_SITES.find((s) => s.id === id) || null;
+
+/** 按登录窗口 URL 找到对应站点配置（登录页或其同源首页） */
+export function siteForLoginUrl(url) {
+  const u = String(url || '');
+  return COOKIE_SITES.find((s) => u.startsWith(s.loginUrl) || u.startsWith(s.homeUrl)) || null;
+}
+
+/** cookies.get({url}) 可能返回 host-only 与域级同名项——按 name 去重留后写者，拼成 handler 接受的 plain string */
+export function serializeCookies(cookies) {
+  const byName = new Map();
+  for (const c of cookies || []) {
+    if (c && typeof c.name === 'string' && c.name) byName.set(c.name, String(c.value ?? ''));
+  }
+  return [...byName.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+function probeUrl(site) {
+  const env = process.env['CD_PROBE_' + site.id.toUpperCase().replace(/[^A-Z0-9]/g, '_')];
+  return env || site.probe.url;
+}
+
+/**
+ * 探测一份会话 cookie 是否仍然有效。
+ * 探测走 fetchJsonRace（跟随全局代理配置——Token Harbor 对大陆/港澳有封锁，出口代理是必须项）。
+ * @returns {Promise<{ok: boolean, reason?: 'invalid'|'no-match'|'http'|'network', status?: number}>}
+ */
+export async function verifySiteCookie(site, cookie, { fetchImpl } = {}) {
+  const url = probeUrl(site);
+  const doFetch = fetchImpl || ((u, init) => fetchJsonRace(u, { headers: init.headers, timeoutMs: 12000 }));
+  try {
+    const r = await doFetch(url, { headers: { Cookie: String(cookie || ''), Accept: 'text/html,application/xhtml+xml' } });
+    if (r.status === 401 || r.status === 403) return { ok: false, reason: 'invalid', status: r.status };
+    if (r.status !== 200) return { ok: false, reason: 'http', status: r.status };
+    const text = await r.text();
+    if (site.probe.match && !text.includes(site.probe.match)) return { ok: false, reason: 'no-match', status: r.status };
+    return { ok: true, status: r.status };
+  } catch (e) {
+    return { ok: false, reason: 'network', error: e?.message || String(e) };
+  }
+}

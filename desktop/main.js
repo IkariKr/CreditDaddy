@@ -27,6 +27,7 @@ let quitting = false;
 let boundPort = PORT;
 let daemonMod = null;
 let buildInfo = null;      // #21 构建身份数据（打包产物才有；本地 dev 无 build.json → null，更新判定只按 semver）
+let cookieSitesLib = null;  // 通用 cookie 站点配置/收割（issue #23）
 let buildInfoLib = null;   // src/buildInfo.js 模块引用（loadBuildInfo / isNewerRebuild）
 // 桌面壳 i18n:与内置 daemon 共用同一个 src/i18n.js 模块实例(同进程)——面板在
 // 「语言」里切换后经 daemon 的 setLocale 直接生效;托盘等本壳 UI 串在重建时按当前语言渲染。
@@ -108,6 +109,7 @@ async function boot() {
       buildInfoLib = await load('src/buildInfo.js');
       buildInfo = buildInfoLib.loadBuildInfo(serverRoot);
     } catch { buildInfo = null; }
+    try { cookieSitesLib = await load('src/cookieSites.js'); } catch { cookieSitesLib = null; }
     checkin.startScheduler();
     // 面板切语言 → daemon 写 settings.json → 本壳即时重建托盘(同进程 i18n 实例已随 PUT 切走)
     try {
@@ -600,12 +602,16 @@ async function openIncognitoWindow(url) {
     guardMainAfterClose(child);   // 站点自弹窗（如授权完成页）同样可能触发级联
   });
   guardMainAfterClose(authWin);
+  // 登录窗口按目标站点登记收割器(#23 通用 cookie 捕获;Qoder 维持专属通道)
+  const cookieSite = cookieSitesLib && typeof cookieSitesLib.siteForLoginUrl === 'function' ? cookieSitesLib.siteForLoginUrl(url) : null;
   authWin.on('closed', () => {
-    // 清空前抢救 Qoder 网页会话 Cookie（httpOnly，页面脚本拿不到，只有 session API 能读）：
-    // 逐资源包用量明细接口只认这个会话。daemon 端会探测归属 uid 后再绑定到对应账号。
+    // 清空前抢救会话 Cookie（httpOnly，页面脚本拿不到，只有 session API 能读）。
     // 必须先等收割完成再清存储——两者并发的话 clearStorageData 会抢先抹掉 Cookie，
     // 收割永远是空的（国际版「缺网页会话」长期修不好的根因）。
-    harvestQoderWebSession(ses)
+    const jobs = [];
+    if (/\.qoder\.(com|cn)(\/|$)/.test(url)) jobs.push(harvestQoderWebSession(ses));
+    if (cookieSite) jobs.push(harvestCookieSiteSession(ses, cookieSite));
+    Promise.allSettled(jobs)
       .catch(() => {})
       .finally(() => { ses.clearStorageData().catch(() => {}); });
   });
@@ -630,6 +636,24 @@ async function harvestQoderWebSession(ses) {
       headers: { 'Content-Type': 'application/json', ...(panelKey ? { 'x-qd-key': panelKey } : {}) },
       body: JSON.stringify({ kind: t.kind, cookie, diag: { cookieCount: (cookies || []).length } }),
     }).catch(() => {});
+  }
+}
+
+/** #23：通用 cookie 站点收割——隐私会话里的全量 cookie 串成 plain string,交给 daemon 探测入库 */
+async function harvestCookieSiteSession(ses, site) {
+  const cookies = await ses.cookies.get({ url: site.homeUrl }).catch(() => []);
+  const cookie = cookieSitesLib.serializeCookies(cookies);
+  const key = (daemonMod && typeof daemonMod.getSessionKey === 'function' && daemonMod.getSessionKey()) || (daemonMod && typeof daemonMod.getPanelKey === 'function' ? daemonMod.getPanelKey() : '');
+  const r = await fetch('http://127.0.0.1:' + boundPort + '/api/cookie-sites/' + site.id + '/capture', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(key ? { 'x-qd-key': key } : {}) },
+    body: JSON.stringify({ cookie, diag: { cookieCount: (cookies || []).length } }),
+  }).catch(() => null);
+  if (r && r.ok) {
+    try { if (win && !win.isDestroyed()) win.webContents.send('cookie-site:captured', { site: site.id, name: site.name }); } catch { /* ignore */ }
+    notify(site.name, Tt('cookie 捕获成功，同步到 10Router 后卡片点亮'));
+  } else {
+    notify(site.name, Tt('cookie 捕获被拒：会话探测未通过，请重新登录后再试'));
   }
 }
 

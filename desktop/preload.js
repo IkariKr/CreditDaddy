@@ -37,4 +37,6 @@ contextBridge.exposeInMainWorld('creditdaddy', {
   /** 打开外部 URL（捐赠按钮） */
   shellOpen: (url) => ipcRenderer.invoke('shell-open-external', url),
   openChangelogBrief: () => ipcRenderer.invoke('open-changelog-brief'),
+  /** cookie 站点捕获成功（issue #23：桌面壳收割完成通知），cb({site, name}) */
+  onCookieCaptured: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('cookie-site:captured', l); return () => ipcRenderer.removeListener('cookie-site:captured', l); },
 });

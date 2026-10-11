@@ -1,7 +1,7 @@
 appname               = creditdaddy
 version = 1.4.0
 display_name          = CreditDaddy
-desc                  = Qoder / WorkBuddy / ZCode / mirasim / 妙手 / Trae / MiniMax 多账号本地管理 + 每日积分自动签到 + 10Router 额度总览（面板端口 47860）
+desc                    = Qoder / WorkBuddy / ZCode / mirasim / 妙手 / Trae / MiniMax 多账号本地管理 + 每日积分自动签到 + 10Router 集成与 Token Harbor 会话捕获（面板端口 47860）
 platform              = x86
 source                = thirdparty
 maintainer            = techysy

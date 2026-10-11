@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+
+### ✨ 新功能
+
+- **通用浏览器 cookie 捕获（配置驱动，issue #23）——首个接入方：Token Harbor 免费额度**：`src/cookieSites.js` 站点配置表（登录页 URL / 收割域 / 探测规则），桌面壳无痕登录窗关闭时按站点通用收割全量 cookie（plain string 形状），daemon `POST /api/cookie-sites/:id/capture` 带 agent 探测（401/403 → 拒绝、缺配额标记 → 重试、网络异常 → 502，探测走 `fetchJsonRace` 跟随全局代理——Token Harbor 对大陆/港澳有封锁）。入库按 provider 单例合并（重复捕获原位更新），同步进 `TENROUTER_PROVIDER_MAP` 并经 `buildConnPayload` 按既有 `providerSpecificData.creditDaddyWebSession.cookie` 形状推给 10Router（与 qoder 老形状并存，零兼容回归）。面板 10Router 页签加「登录捕获」行（已捕获时间 / 未捕获提示；无桌面桥时按钮禁用并注明需桌面版无痕窗）；捕获成功经 preload 事件回落，自动刷新行与额度。回归测试 6 项（拼串去重 / 探测四结局 / 载荷形状 / 页签隔离 / daemon 全链路 / 单例合并）。
+
 ## [1.4.0] (2026-10-10)
 
 本版主题：**面板与运行日志多语言（5 语）+ 面板设置全面重构 + MiniMax / WorkBuddy 凭据健壮化 + 发版前安全加固**。新增 ⚠️ 升级注意（含两项行为变更），其余为向后兼容增量。

@@ -21,6 +21,7 @@ export const TENROUTER_PROVIDER_MAP = {
   'qoder-cn': 'qoder-cn',
   workbuddy: 'codebuddy-cn',
   'workbuddy-intl': 'codebuddy-intl',
+  tokenharbor: 'tokenharbor',   // #23：Token Harbor 免费额度卡片(cookie 会话账号)
   // zcode → glm：等 zcode 反代就绪后补一行（同步流程已就绪，无需改代码）
 };
 
@@ -106,14 +107,7 @@ async function syncViaProviders({ endpoint, key, groups }) {
   for (const [target, list] of groups) {
     const row = { provider: target, count: list.length, status: 'ok', imported: 0, skipped: 0, failed: 0 };
     for (const a of list) {
-      // issue #44：qoder 的 apikey 连接同样按 providerSpecificData 读网页会话
-      // （usage 侧 getQoderUsage 不区分 authType），所以新建连接时把会话一并
-      // 挂上；已存在的同名连接此接口不更新（409），缺失由同步摘要点名提醒。
-      const web = a.meta?.qoderWebSession?.cookie && String(a.provider).startsWith('qoder')
-        ? { creditDaddyWebSession: { cookie: a.meta.qoderWebSession.cookie, capturedAt: a.meta.qoderWebSession.capturedAt || null, userId: a.uid || null } }
-        : null;
-      const body = { provider: target, apiKey: a.token, name: connName(a) };
-      if (web) body.providerSpecificData = { userId: a.uid || null, ...web };
+      const body = buildConnPayload(a, target);
       const r = await trFetch(`${endpoint}/api/providers`, { key, method: 'POST', body });
       if (r.status === 201 || r.status === 200) row.imported++;
       else if (r.status === 409) row.skipped++;
@@ -123,6 +117,20 @@ async function syncViaProviders({ endpoint, key, groups }) {
     results.push(row);
   }
   return results;
+}
+
+/**
+ * 连接体（POST /api/providers 的单账号载荷）。网页会话两种走同一形状（issue #23）：
+ * - qoder 专属老形状 meta.qoderWebSession（issue #44：usage 侧不区分 authType）
+ * - 通用站点 meta.cookieSiteSession（tokenharbor 等,10R 卡片直接读 creditDaddyWebSession）
+ */
+export function buildConnPayload(a, target) {
+  const body = { provider: target, apiKey: a.token, name: connName(a) };
+  const qc = a.meta?.qoderWebSession?.cookie && String(a.provider).startsWith('qoder') ? a.meta.qoderWebSession : null;
+  const sc = a.meta?.cookieSiteSession?.cookie ? a.meta.cookieSiteSession : null;
+  if (qc) body.providerSpecificData = { userId: a.uid || null, creditDaddyWebSession: { cookie: qc.cookie, capturedAt: qc.capturedAt || null, userId: a.uid || null } };
+  else if (sc) body.providerSpecificData = { userId: null, creditDaddyWebSession: { cookie: sc.cookie, capturedAt: sc.capturedAt || null, userId: null } };
+  return body;
 }
 
 /**
