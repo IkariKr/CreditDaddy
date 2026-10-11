@@ -20,6 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { anyProcRunning, invalidateProcCache } from './winProc.js';
 
 const EXE_NAME = '妙手.exe';
 
@@ -105,16 +106,10 @@ function decodeTasklist(buf) {
   try { return new TextDecoder('gbk').decode(buf); } catch { return buf.toString('utf8'); }
 }
 
-export function catpawRunning() {
+export function catpawRunning({ sync = false } = {}) {
   if (runningOverride !== null) return runningOverride;   // 测试钩子
   if (process.platform !== 'win32') return false;
-  try {
-    const out = decodeTasklist(execFileSync('tasklist.exe',
-      ['/FI', `IMAGENAME eq ${EXE_NAME}`, '/NH'],
-      { windowsHide: true, encoding: 'buffer', timeout: 8000 }));
-    // 无匹配时 tasklist 输出 INFO 行（中文系统为 GBK 代码页，见 decodeTasklist）
-    return out.toLowerCase().includes(EXE_NAME.toLowerCase()) && !/no tasks|没有找到|没有任务/i.test(out);
-  } catch { return false; }
+  return anyProcRunning(EXE_NAME, { sync });
 }
 
 export function candidateClientPath() {
@@ -142,16 +137,19 @@ const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0,
 
 export function terminateCatpaw({ timeoutMs = 8000 } = {}) {
   if (process.platform !== 'win32') return { closed: false, supported: false };
-  if (!catpawRunning()) return { closed: false, running: false };
+  if (!catpawRunning({ sync: true })) return { closed: false, running: false };
   try { execFileSync('taskkill.exe', ['/IM', EXE_NAME, '/T'], { windowsHide: true, stdio: 'ignore', timeout: 15_000 }); } catch {}
+  invalidateProcCache();
   let deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline && catpawRunning()) nap(250);
-  if (catpawRunning()) {
+  while (Date.now() < deadline && catpawRunning({ sync: true })) nap(250);
+  if (catpawRunning({ sync: true })) {
     try { execFileSync('taskkill.exe', ['/IM', EXE_NAME, '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 15_000 }); } catch {}
+    invalidateProcCache();
     deadline = Date.now() + 3000;
-    while (Date.now() < deadline && catpawRunning()) nap(250);
+    while (Date.now() < deadline && catpawRunning({ sync: true })) nap(250);
   }
-  return { closed: !catpawRunning(), running: catpawRunning() };
+  const still = catpawRunning({ sync: true });
+  return { closed: !still, running: still };
 }
 
 /** 当前客户端登录的 token（面板「客户端当前」标识用，避免额外网络请求） */

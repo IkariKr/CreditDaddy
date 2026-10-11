@@ -5031,6 +5031,12 @@ function hideBootBusy() { const b = $('boot-busy'); if (!b) return; clearTimeout
       try { await loadStatus(); await loadZNet(); await loadZGateway(); await loadMGateway(); await loadTGateway(); await refreshAccountList(); render(); }
       finally { statusBusy = false; }
     }, 30000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        if (!logsBusy) loadLogs();
+        if (!statusBusy) loadStatus().then(refreshAccountList).then(render);
+      }
+    });
     });
   }
   // 先直接请求（本机模式无需密码）；需要密码时 api() 会弹框并重试
