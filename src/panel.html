@@ -2426,9 +2426,9 @@ function renderCookieSites() {
   if (!sites) { body.innerHTML = T('<div class="dim">加载中…</div>'); loadCookieSites().then(() => renderCookieSites()); return; }
   if (!sites.length) { body.innerHTML = T('<div class="muted-empty">暂无可捕获的供应商</div>'); return; }
   body.innerHTML = sites.map((site) => {
-    const acc = (state.accounts || []).find((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id);
-    const stateTxt = acc
-      ? T('<span class="dim">已捕获 ') + esc(fmtTime(acc.meta.cookieSiteSession?.capturedAt || acc.updatedAt)) + '</span>'
+    // 状态以 daemon 的 capturedAt 为准:面板 accounts 是脱敏视图(无 meta),不能用它判捕获状态
+    const stateTxt = site.capturedAt
+      ? T('<span class="dim">已捕获 ') + esc(fmtTime(site.capturedAt)) + '</span>'
       : T('<span class="dim">未捕获</span>');
     const btn = canCapture
       ? '<button class="btn" data-capture-site="' + esc(site.id) + '">' + T('登录捕获') + '</button>'
