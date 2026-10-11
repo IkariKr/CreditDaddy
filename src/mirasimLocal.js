@@ -26,6 +26,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile, execFileSync, execSync } from 'node:child_process';
+import { anyProcRunning, invalidateProcCache } from './winProc.js';
 
 const ENC_PREFIX = 'mrs1:';
 
@@ -233,28 +234,28 @@ export function candidateClientPath() {
   return null;
 }
 
-export function mirasimRunning() {
+export function mirasimRunning({ sync = false } = {}) {
   if (process.platform !== 'win32') return false;
-  try {
-    const out = execSync('tasklist /FI "IMAGENAME eq Mirasim.exe" /NH', { windowsHide: true, encoding: 'utf8' });
-    return /mirasim\.exe/i.test(out);
-  } catch { return false; }
+  return anyProcRunning('Mirasim.exe', { sync });
 }
 
 const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 export function terminateMirasim({ timeoutMs = 8000 } = {}) {
   if (process.platform !== 'win32') return { closed: false, supported: false };
-  if (!mirasimRunning()) return { closed: false, running: false };
+  if (!mirasimRunning({ sync: true })) return { closed: false, running: false };
   try { execSync('taskkill /IM Mirasim.exe /T', { windowsHide: true, stdio: 'ignore' }); } catch {}
+  invalidateProcCache();
   let deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline && mirasimRunning()) nap(250);
-  if (mirasimRunning()) {
+  while (Date.now() < deadline && mirasimRunning({ sync: true })) nap(250);
+  if (mirasimRunning({ sync: true })) {
     try { execSync('taskkill /IM Mirasim.exe /T /F', { windowsHide: true, stdio: 'ignore' }); } catch {}
+    invalidateProcCache();
     deadline = Date.now() + 3000;
-    while (Date.now() < deadline && mirasimRunning()) nap(250);
+    while (Date.now() < deadline && mirasimRunning({ sync: true })) nap(250);
   }
-  return { closed: !mirasimRunning(), running: mirasimRunning() };
+  const still = mirasimRunning({ sync: true });
+  return { closed: !still, running: still };
 }
 
 // ── 当前会话读取与切换 ──
