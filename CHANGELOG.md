@@ -6,10 +6,18 @@
 
 ## [Unreleased]
 
+## [1.4.1] (2026-10-11)
+
+本版主题：**通用浏览器 cookie 捕获（配置驱动）——Token Harbor 免费额度首个接入（10Router Token Harbor Free 卡片自动点亮，不再手粘 cookie）**。无破坏性变更，可直接升级。
+
 
 ### ✨ 新功能
 
-- **通用浏览器 cookie 捕获（配置驱动，issue #23）——首个接入方：Token Harbor 免费额度**：`src/cookieSites.js` 站点配置表（登录页 URL / 收割域 / 探测规则），桌面壳无痕登录窗关闭时按站点通用收割全量 cookie（plain string 形状），daemon `POST /api/cookie-sites/:id/capture` 带 agent 探测（401/403 → 拒绝、缺配额标记 → 重试、网络异常 → 502，探测走 `fetchJsonRace` 跟随全局代理——Token Harbor 对大陆/港澳有封锁）。入库按 provider 单例合并（重复捕获原位更新），同步进 `TENROUTER_PROVIDER_MAP` 并经 `buildConnPayload` 按既有 `providerSpecificData.creditDaddyWebSession.cookie` 形状推给 10Router（与 qoder 老形状并存，零兼容回归）。面板 10Router 页签加「登录捕获」行（已捕获时间 / 未捕获提示；无桌面桥时按钮禁用并注明需桌面版无痕窗）；捕获成功经 preload 事件回落，自动刷新行与额度。回归测试 6 项（拼串去重 / 探测四结局 / 载荷形状 / 页签隔离 / daemon 全链路 / 单例合并）。
+- **通用浏览器 cookie 捕获（配置驱动，issue #23）——首个接入方：Token Harbor 免费额度**：`src/cookieSites.js` 站点配置表（登录页 URL / 收割域 / 探测规则），桌面壳无痕登录窗关闭时按站点通用收割全量 cookie（plain string 形状），daemon `POST /api/cookie-sites/:id/capture` 带 agent 探测（401/403 → 拒绝、缺配额标记 → 重试、网络异常 → 502，探测走 `fetchJsonRace` 跟随全局代理——Token Harbor 对大陆/港澳有封锁）。入库按 provider 单例合并（重复捕获原位更新），同步进 `TENROUTER_PROVIDER_MAP` 并经 `buildConnPayload` 按既有 `providerSpecificData.creditDaddyWebSession.cookie` 形状推给 10Router（与 qoder 老形状并存，零兼容回归）。面板 10Router 页签加「登录捕获」行（已捕获时间 / 未捕获提示；无桌面桥时按钮禁用并注明需桌面版无痕窗）；捕获成功经 preload 事件回落，自动刷新行与额度。回归测试 6 项（拼串去重 / 探测四结局 / 载荷形状 / 页签隔离 / daemon 全链路 / 单例合并）。上线形态经复查调整为：10Router 页签 actions 收拢为「Cookie 会话」入口按钮 → 弹窗逐供应商列出（与后续供应商扩展对位）。
+
+### 🐛 修复
+
+- **Cookie 会话捕获按钮点不动（初版接线缺陷）**：入口按钮的委托分支从未真正写进 tr-panel 的点击链（编辑过程里的静默落空），整行区块拔掉重做——改为 actions 里的「Cookie 会话」按钮开弹窗（`m-cookie`），捕获按钮走弹窗内独立委托（`data-capture-site`），入口走 `data-tr="cookie-sites"` 既有链路。CDP 实拍：入口点击开弹窗、浏览器态捕获禁用注明需桌面、桥在场点捕获直达 `openAuthWindow(loginUrl)`。
 
 ## [1.4.0] (2026-10-10)
 

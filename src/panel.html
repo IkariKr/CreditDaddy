@@ -782,6 +782,15 @@
   </div>
 </div>
 
+<div class="mask" id="m-cookie">
+  <div class="modal">
+    <div class="modal-title"><span data-i18n="Cookie 会话捕获">Cookie 会话捕获</span><button class="close" data-close>✕</button></div>
+    <div class="hint" data-i18n="为「额度只在网页 dashboard」的供应商捕获登录会话(cookie),同步给 10Router 点亮配额卡片;凭据全程只存本机(账号库加密)。">为「额度只在网页 dashboard」的供应商捕获登录会话(cookie),同步给 10Router 点亮配额卡片;凭据全程只存本机(账号库加密)。</div>
+    <div id="cookie-sites-body" style="margin-top:10px;display:grid;gap:8px"></div>
+    <div class="modal-actions"><button class="btn" data-close data-i18n="关闭">关闭</button></div>
+  </div>
+</div>
+
 <!-- 通用对话框 -->
 <div class="mask" id="m-dialog">
   <div class="modal sm">
@@ -2409,26 +2418,38 @@ async function loadCookieSites(force) {
   try { state.cookieSites = (await api('/api/cookie-sites')).sites || []; } catch { state.cookieSites = state.cookieSites || []; }
   return state.cookieSites;
 }
-function cookieSitesHtml() {
+function renderCookieSites() {
+  const body = $('cookie-sites-body');
+  if (!body) return;
   const sites = state.cookieSites;
   const canCapture = Boolean(window.creditdaddy && typeof window.creditdaddy.openAuthWindow === 'function');
-  if (sites && !sites.length) return '';
-  const rows = (sites || []).map((site) => {
+  if (!sites) { body.innerHTML = T('<div class="dim">加载中…</div>'); loadCookieSites().then(() => renderCookieSites()); return; }
+  if (!sites.length) { body.innerHTML = T('<div class="muted-empty">暂无可捕获的供应商</div>'); return; }
+  body.innerHTML = sites.map((site) => {
     const acc = (state.accounts || []).find((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id);
     const stateTxt = acc
       ? T('<span class="dim">已捕获 ') + esc(fmtTime(acc.meta.cookieSiteSession?.capturedAt || acc.updatedAt)) + '</span>'
-      : T('<span class="dim">未捕获——桌面版点「登录捕获」完成登录后自动收割</span>');
+      : T('<span class="dim">未捕获</span>');
     const btn = canCapture
-      ? T('<button class="btn" data-tr="cookie-site" data-id="') + esc(site.id) + T('">登录捕获</button>')
+      ? '<button class="btn" data-capture-site="' + esc(site.id) + '">' + T('登录捕获') + '</button>'
       : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">登录捕获</button>');
-    return T('<div class="stat" style="border:1px solid var(--border-subtle);border-radius:10px;padding:8px 10px">')
-      + T('<span><b>') + esc(site.label || site.name) + '</b> ' + stateTxt + '</span>' + btn + '</div>'
-      + (site.hint ? T('<div class="hint" style="grid-column:1/-1">') + esc(site.hint) + '</div>' : '');
+    const hint = site.hint ? T('<div class="hint">') + esc(site.hint) + '</div>' : '';
+    return '<div style="border:1px solid var(--border-subtle);border-radius:10px;padding:10px 12px;display:grid;gap:6px">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'
+      + '<span><b>' + esc(site.label || site.name) + '</b> · ' + stateTxt + '</span>' + btn + '</div>' + hint + '</div>';
   }).join('');
-  return rows
-    ? T('<div class="summary" style="margin:8px 0 6px;display:grid;gap:8px">') + rows + '</div>'
-    : '';
 }
+function openCookieSitesModal() {
+  const body = $('cookie-sites-body');
+  if (body) body.innerHTML = T('<div class="dim">加载中…</div>');
+  openModal('m-cookie');
+  loadCookieSites(true).then(() => renderCookieSites());
+}
+document.getElementById('m-cookie')?.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-capture-site]');
+  if (b) cookieSiteCapture(b.dataset.captureSite);
+});
+
 async function cookieSiteCapture(siteId) {
   const site = (state.cookieSites || []).find((x) => x.id === siteId);
   if (!site || !window.creditdaddy || typeof window.creditdaddy.openAuthWindow !== 'function') return;
@@ -2440,7 +2461,7 @@ if (window.creditdaddy && typeof window.creditdaddy.onCookieCaptured === 'functi
     toast(T('{name} cookie 捕获成功，同步到 10Router 后卡片点亮', { name: name || '' }), true);
     state.cookieSites = null;
     Promise.allSettled([loadCookieSites(true), refreshAccountList(), loadTrQuotas(true)])
-      .then(() => { if (state.view === 'tenrouter') renderTenrouter(); renderDash(); });
+      .then(() => { if (state.view === 'tenrouter') renderTenrouter(); renderCookieSites(); renderDash(); });
   });
 }
 
@@ -2508,9 +2529,9 @@ function renderTenrouter() {
     + T('<button class="btn" data-tr="sync" title="用量同步：自动开关、同步来源与手动同步（点我打开）"') + (tr.syncing || c.syncing ? ' disabled' : '') + '>'
     + '<span class="dot' + (c.sync.enabled ? ' on' : '') + '"></span>' + (tr.syncing || c.syncing ? T('同步中…') : T('用量同步')) + '</button>'
     + T('<button class="btn" data-tr="settings">设置</button>')
+    + T('<button class="btn" data-tr="cookie-sites" title="Token Harbor 等网页会话型供应商">Cookie 会话</button>')
     + '</div></div>'
     + tabStrip
-    + cookieSitesHtml()
     + '<div class="tr-grid">' + grid + '</div>';
   if (!state.cookieSites) loadCookieSites().then(() => { if (state.view === 'tenrouter') renderTenrouter(); });
 }
@@ -2643,6 +2664,7 @@ $('tr-panel').addEventListener('click', (e) => {
   if (b.dataset.tr === 'settings') openTrSettings();
   else if (b.dataset.tr === 'refresh') loadTrQuotas(true);
   else if (b.dataset.tr === 'sync') openTrSync();
+  else if (b.dataset.tr === 'cookie-sites') openCookieSitesModal();
   else if (b.dataset.tr === 'vendor') {
     const v = b.dataset.v || '';
     state.trVendor = v;
