@@ -19,7 +19,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, execFile, execFileSync } from 'node:child_process';
 import { dataDir } from './store.js';
-import { anyProcRunning } from './winProc.js';
+import { anyProcRunning, invalidateProcCache } from './winProc.js';
 import { installedUmid, CLI_RISK_ENV } from './qoderUmid.js';
 
 const RISK_TTL_MS = 50 * 60 * 1000;        // 客户端每 60±5 分钟刷新一次，这里保守取 50 分钟
@@ -470,20 +470,23 @@ const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0,
 /** 结束 Qoder 进程：先普通终止（给客户端落盘的机会），超时后 /F */
 export function terminateQoder({ timeoutMs = 8000 } = {}) {
   if (process.platform !== 'win32') return { closed: false, supported: false };
-  if (!qoderRunning()) return { closed: false, running: false };
+  if (!anyProcRunning(QODER_EXES, { sync: true })) return { closed: false, running: false };
   for (const exe of QODER_EXES) {
     try { execFileSync('taskkill.exe', ['/IM', exe, '/T'], { windowsHide: true, stdio: 'ignore' }); } catch {}
   }
+  invalidateProcCache();
   let deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline && qoderRunning()) nap(250);
-  if (qoderRunning()) {
+  while (Date.now() < deadline && anyProcRunning(QODER_EXES, { sync: true })) nap(250);
+  if (anyProcRunning(QODER_EXES, { sync: true })) {
     for (const exe of QODER_EXES) {
       try { execFileSync('taskkill.exe', ['/IM', exe, '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch {}
     }
+    invalidateProcCache();
     deadline = Date.now() + 3000;
-    while (Date.now() < deadline && qoderRunning()) nap(250);
+    while (Date.now() < deadline && anyProcRunning(QODER_EXES, { sync: true })) nap(250);
   }
-  return { closed: !qoderRunning(), running: qoderRunning() };
+  const still = anyProcRunning(QODER_EXES, { sync: true });
+  return { closed: !still, running: still };
 }
 
 /**

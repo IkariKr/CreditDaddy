@@ -15,6 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { dataDir } from './store.js';
+import { anyProcRunning, invalidateProcCache } from './winProc.js';
 
 const APP_NAMES = ['TRAE SOLO CN', 'Trae CN', 'TRAE SOLO', 'Trae'];
 const EXE_NAMES = ['TRAE SOLO CN.exe', 'Trae CN.exe', 'TRAE SOLO.exe', 'Trae.exe'];
@@ -108,17 +109,10 @@ const decodeTasklist = (buf) => {
 let runningOverride = null;
 
 /** 任一变体的 Trae 客户端是否在运行 */
-export function traeRunning() {
+export function traeRunning({ sync = false } = {}) {
   if (runningOverride !== null) return runningOverride;
   if (process.platform !== 'win32') return false;
-  for (const exe of EXE_NAMES) {
-    try {
-      const out = decodeTasklist(execFileSync('tasklist.exe', ['/FI', `IMAGENAME eq ${exe}`, '/NH'],
-        { windowsHide: true, encoding: 'buffer', timeout: 8000 }));
-      if (out.toLowerCase().includes(exe.toLowerCase()) && !/no tasks|没有找到|没有任务/i.test(out)) return true;
-    } catch { /* 下一个变体 */ }
-  }
-  return false;
+  return anyProcRunning(EXE_NAMES, { sync });
 }
 
 export function candidateClientPath() {
@@ -194,7 +188,7 @@ export function uidFromJwt(token) {
 
 export function terminateTrae({ timeoutMs = 8000 } = {}) {
   if (process.platform !== 'win32') return { closed: false, supported: false };
-  if (!traeRunning()) return { closed: false, running: false };
+  if (!traeRunning({ sync: true })) return { closed: false, running: false };
   const kill = (force) => {
     for (const exe of EXE_NAMES) {
       try {
@@ -202,17 +196,19 @@ export function terminateTrae({ timeoutMs = 8000 } = {}) {
           { windowsHide: true, stdio: 'ignore', timeout: 15_000 });
       } catch { /* 该变体没在跑 */ }
     }
+    invalidateProcCache();
   };
   const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
   const deadline = Date.now() + timeoutMs;
   kill(false);
-  while (Date.now() < deadline && traeRunning()) nap(250);
-  if (traeRunning()) {
+  while (Date.now() < deadline && traeRunning({ sync: true })) nap(250);
+  if (traeRunning({ sync: true })) {
     kill(true);
     const hard = Date.now() + 3000;
-    while (Date.now() < hard && traeRunning()) nap(250);
+    while (Date.now() < hard && traeRunning({ sync: true })) nap(250);
   }
-  return { closed: !traeRunning(), running: traeRunning() };
+  const still = traeRunning({ sync: true });
+  return { closed: !still, running: still };
 }
 
 /** 测试钩子 */
