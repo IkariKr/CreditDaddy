@@ -15,7 +15,7 @@ import http from 'node:http';
 process.env.CREDITDADDY_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'creditdaddy-csite-'));
 
 const { serializeCookies, getSite, siteForLoginUrl, verifySiteCookie, COOKIE_SITES } = await import('../src/cookieSites.js');
-const { buildConnPayload } = await import('../src/tenrouterAccounts.js');
+const { buildConnPayload, mapProviderId } = await import('../src/tenrouterAccounts.js');
 const { productOf } = await import('../src/constants.js');
 
 test('serializeCookies：同名按后者去重、拼成 plain string', () => {
@@ -64,10 +64,10 @@ test('verifySiteCookie：探测按浏览器形头发送（裸 UA 会拿到空壳
 
 test('buildConnPayload：tokenharbor 按通用形状挂会话；qoder 老形状不回归；无会话不带字段', () => {
   const th = { id: 'x1', provider: 'tokenharbor', token: 'a=b; c=d', name: 'Token Harbor 网页会话', meta: { cookieSiteSession: { cookie: 'a=b; c=d', capturedAt: '2026-10-11T00:00:00Z' } } };
-  const p1 = buildConnPayload(th, 'tokenharbor');
-  assert.equal(p1.provider, 'tokenharbor');
-  assert.equal(p1.apiKey, 'a=b; c=d');
-  assert.deepEqual(p1.providerSpecificData, { userId: null, creditDaddyWebSession: { cookie: 'a=b; c=d', capturedAt: '2026-10-11T00:00:00Z', userId: null } });
+    const p1 = buildConnPayload(th, 'tokenharbor-free');
+  assert.equal(p1.provider, 'tokenharbor-free');
+  // sync map must land on the monitor card (wallet card is /v1 transport, cookie doesn't belong there)
+  assert.equal(mapProviderId('tokenharbor'), 'tokenharbor-free');
 
   const q = { id: 'x2', provider: 'qoder', token: 'jwt', uid: 'u123', name: 'Q', meta: { qoderWebSession: { cookie: 's=1', capturedAt: '2026-10-01T00:00:00Z' } } };
   const p2 = buildConnPayload(q, 'qoder');

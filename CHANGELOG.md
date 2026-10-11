@@ -19,6 +19,7 @@
 
 - **Token Harbor 捕获被「假空壳」误拒（首版探测头缺失）**：探测 dashboard 裸发 `undici` 默认 UA，边缘节点直接喂 HTML 空壳——`Free allowance` 标记不在壳内，登录明明成功也报「登录未完成」。探测头按 10Router `services/usage/tokenharbor.js` 同款浏览器形补齐（Chrome UA / Accept-Language / Referer / Upgrade-Insecure-Requests）；会话过期被挡回登录页与「页面结构变化」分开归类（前者 = 会话失效，与 10R 的 AUTH_EXPIRED 对齐）。
 - **捕获失败时面板弹窗无回显**：此前仅托盘气泡提示。现在桌面壳把服务端拒绝原因（401/422/502 分级的具体文案）转发为面板事件，弹窗 toast 落详情；弹窗保持打开可立刻重试。
+- **Token Harbor 同步落点挂错卡（监控卡 ≠ 钱包卡）**：初版把会话同步到 `tokenharbor`(sk- 钱包卡走 /v1 transport，cookie 当运输 key 必败）；issue #23 点名的是 `tokenharbor-free`（注册表 freeTier，只做额度监控不走路由）。同步映射收口 `tokenharbor → 'tokenharbor-free'`。已知限制：apikey 通道同名连接 409 只「已存在」不覆盖，重新捕获的 cookie 轮换需 10Router 侧允许「冲突原位更新」或在 CD 走连接编辑接口（10R 注释的既有约定，另行处理）。
 - **Cookie 会话捕获按钮点不动（初版接线缺陷）**：入口按钮的委托分支从未真正写进 tr-panel 的点击链（编辑过程里的静默落空），整行区块拔掉重做——改为 actions 里的「Cookie 会话」按钮开弹窗（`m-cookie`），捕获按钮走弹窗内独立委托（`data-capture-site`），入口走 `data-tr="cookie-sites"` 既有链路。CDP 实拍：入口点击开弹窗、浏览器态捕获禁用注明需桌面、桥在场点捕获直达 `openAuthWindow(loginUrl)`。
 
 ## [1.4.0] (2026-10-10)
