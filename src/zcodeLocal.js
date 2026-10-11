@@ -23,6 +23,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
 import * as zc from './zcrypto.js';
+import { anyProcRunning, invalidateProcCache } from './winProc.js';
 
 function home() {
   return process.env.ZCODE_HOME || os.homedir();
@@ -139,16 +140,12 @@ export function findSameLogin(liveCreds, secret, existingAccounts) {
   });
 }
 
-const WIN_TASKLIST = () => {
-  try {
-    return execSync('tasklist /FI "IMAGENAME eq ZCode.exe" /NH', { windowsHide: true, encoding: 'utf8' });
-  } catch { return ''; }
-};
+const ZCODE_EXES = ['ZCode.exe', 'zcode.exe'];
 
 /** ZCode 客户端是否在运行（仅 Windows 有实现；其他平台保守返回 false，即“允许切换”） */
-export function zcodeRunning() {
+export function zcodeRunning({ sync = false } = {}) {
   if (process.platform !== 'win32') return false;
-  return /zcode\.exe/i.test(WIN_TASKLIST());
+  return anyProcRunning(ZCODE_EXES, { sync });
 }
 
 const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -161,16 +158,19 @@ const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0,
  */
 export function terminateZcode({ timeoutMs = 8000 } = {}) {
   if (process.platform !== 'win32') return { closed: false, supported: false };
-  if (!zcodeRunning()) return { closed: false, running: false };
+  if (!zcodeRunning({ sync: true })) return { closed: false, running: false };
   try { execSync('taskkill /IM ZCode.exe /T', { windowsHide: true, stdio: 'ignore' }); } catch {}
+  invalidateProcCache();
   let deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline && zcodeRunning()) nap(250);
-  if (zcodeRunning()) {
+  while (Date.now() < deadline && zcodeRunning({ sync: true })) nap(250);
+  if (zcodeRunning({ sync: true })) {
     try { execSync('taskkill /IM ZCode.exe /T /F', { windowsHide: true, stdio: 'ignore' }); } catch {}
+    invalidateProcCache();
     deadline = Date.now() + 3000;
-    while (Date.now() < deadline && zcodeRunning()) nap(250);
+    while (Date.now() < deadline && zcodeRunning({ sync: true })) nap(250);
   }
-  return { closed: !zcodeRunning(), running: zcodeRunning() };
+  const still = zcodeRunning({ sync: true });
+  return { closed: !still, running: still };
 }
 
 /**

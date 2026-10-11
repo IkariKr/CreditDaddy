@@ -4732,8 +4732,17 @@ function hideBootBusy() { const b = $('boot-busy'); if (!b) return; clearTimeout
       if (!document.hidden && Date.now() - quotaLoadedAt > 60 * 1000) loadQuotas();
     });
     loadLogs();
-    setInterval(loadLogs, 10000);
-    setInterval(async () => { await loadStatus(); await loadZNet(); await loadZGateway(); await loadMGateway(); await loadTGateway(); await refreshAccountList(); render(); }, 30000);
+    setInterval(() => { if (!document.hidden) loadLogs(); }, 10000);
+    setInterval(async () => {
+      if (document.hidden) return;
+      await loadStatus(); await loadZNet(); await loadZGateway(); await loadMGateway(); await loadTGateway(); await refreshAccountList(); render();
+    }, 30000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        loadLogs();
+        loadStatus().then(refreshAccountList).then(render);
+      }
+    });
     });
   }
   // 先直接请求（本机模式无需密码）；需要密码时 api() 会弹框并重试
