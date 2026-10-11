@@ -2457,7 +2457,9 @@ async function cookieSiteCapture(siteId) {
   if (!r || r.ok !== true) toast(T('打开登录窗口失败：') + ((r && r.error) || ''), false);
 }
 if (window.creditdaddy && typeof window.creditdaddy.onCookieCaptured === 'function') {
-  window.creditdaddy.onCookieCaptured(({ name }) => {
+  window.creditdaddy.onCookieCaptured((payload) => {
+    if (payload && payload.ok === false) { toast(payload.error || T('cookie 捕获失败'), false); return; }
+    const name = payload && payload.name;
     toast(T('{name} cookie 捕获成功，同步到 10Router 后卡片点亮', { name: name || '' }), true);
     state.cookieSites = null;
     Promise.allSettled([loadCookieSites(true), refreshAccountList(), loadTrQuotas(true)])

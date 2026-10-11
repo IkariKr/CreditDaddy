@@ -37,15 +37,29 @@ test('配置表：getSite / siteForLoginUrl 命中与未命中', () => {
   assert.equal(siteForLoginUrl('https://qoder.com/auth/login'), null);
 });
 
-test('verifySiteCookie：invalid / no-match / http / network 四种结局', async () => {
+test('verifySiteCookie：invalid / no-match / http / network 四种结局 + 登录页壳分类', async () => {
   const site = COOKIE_SITES[0];
   const fake = (status, text = '') => async () => ({ status, text: async () => text });
   assert.deepEqual((await verifySiteCookie(site, 'c', { fetchImpl: fake(401) })).reason, 'invalid');
   assert.deepEqual((await verifySiteCookie(site, 'c', { fetchImpl: fake(200, '<html>nothing here</html>') })).reason, 'no-match');
+  // 会话过期被挡回登录页 = invalid(与 10Router AUTH_EXPIRED 分类对齐),不是 layout-change
+  assert.deepEqual((await verifySiteCookie(site, 'c', { fetchImpl: fake(200, '<html><title>Sign in</title><form>log in</form></html>') })).reason, 'invalid');
   assert.deepEqual((await verifySiteCookie(site, 'c', { fetchImpl: fake(500) })).reason, 'http');
   assert.equal((await verifySiteCookie(site, 'c', { fetchImpl: fake(200, '<html>Free allowance 20% used</html>') })).ok, true);
   const netFail = async () => { throw new Error('boom'); };
   assert.equal((await verifySiteCookie(site, 'c', { fetchImpl: netFail })).reason, 'network');
+});
+
+test('verifySiteCookie：探测按浏览器形头发送（裸 UA 会拿到空壳页误判 no-match）', async () => {
+  const site = COOKIE_SITES[0];
+  let seen = null;
+  const spy = async (url, init) => { seen = init.headers; return { status: 200, text: async () => '<html>Free allowance 10% used</html>' }; };
+  await verifySiteCookie(site, 'alive=1', { fetchImpl: spy });
+  assert.ok(seen, 'fetch 必须被调用');
+  assert.ok(/Chrome\//.test(seen['User-Agent'] || ''), '要有浏览器 UA(裸 undici UA 会被边缘节点喂空壳页)');
+  assert.ok((seen['Accept'] || '').includes('text/html'), 'Accept 为 HTML');
+  assert.ok((seen['Referer'] || '').startsWith('https://tokenharbor.ai'), 'Referer 带站点首页');
+  assert.equal(seen['Cookie'], 'alive=1');
 });
 
 test('buildConnPayload：tokenharbor 按通用形状挂会话；qoder 老形状不回归；无会话不带字段', () => {

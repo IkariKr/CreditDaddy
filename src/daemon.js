@@ -800,7 +800,7 @@ async function handleApi(req, res, url) {
         : probe.reason === 'no-match' ? '探测页面缺少配额标记（登录未完成或已登出）'
         : `探测失败（${probe.reason}${probe.status ? ' HTTP ' + probe.status : ''}）`;
       logger.warn('COOKIE-SITE', '{name} cookie 捕获被拒:{reason}', { name: site.name, reason });
-      return json(res, probe.reason === 'invalid' ? 401 : probe.reason === 'no-match' ? 422 : 502, { error: probe.reason === 'invalid' ? '会话不可用，请重新登录该站点后再捕获（探测 401/403）' : probe.reason === 'no-match' ? '捕获的会话缺少预期页面标记（可能登录未完成），请重试' : '探测站点失败：' + (probe.error || reason) });
+      return json(res, probe.reason === 'invalid' ? 401 : probe.reason === 'no-match' ? 422 : 502, { error: probe.reason === 'invalid' ? '会话不可用，请重新登录该站点后再捕获（探测 401/403）' : probe.reason === 'no-match' ? 'dashboard 页未找到配额标记——页面结构可能有更新，请稍后再试或反馈给我们' : '探测站点失败：' + (probe.error || reason) });
     }
 
     const now = new Date().toISOString();

@@ -650,10 +650,13 @@ async function harvestCookieSiteSession(ses, site) {
     body: JSON.stringify({ cookie, diag: { cookieCount: (cookies || []).length } }),
   }).catch(() => null);
   if (r && r.ok) {
-    try { if (win && !win.isDestroyed()) win.webContents.send('cookie-site:captured', { site: site.id, name: site.name }); } catch { /* ignore */ }
+    try { if (win && !win.isDestroyed()) win.webContents.send('cookie-site:captured', { site: site.id, name: site.name, ok: true }); } catch { /* ignore */ }
     notify(site.name, Tt('cookie 捕获成功，同步到 10Router 后卡片点亮'));
   } else {
-    notify(site.name, Tt('cookie 捕获被拒：会话探测未通过，请重新登录后再试'));
+    const detail = r ? await r.json().catch(() => ({})) : {};
+    const errText = (detail && detail.error) || Tt('cookie 捕获被拒：会话探测未通过，请重新登录后再试');
+    notify(site.name, errText);
+    try { if (win && !win.isDestroyed()) win.webContents.send('cookie-site:captured', { site: site.id, name: site.name, ok: false, error: errText }); } catch { /* ignore */ }
   }
 }
 

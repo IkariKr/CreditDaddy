@@ -5,11 +5,32 @@
  * 配置表加一行即可接入新站点（登录页 URL / 收割域 / 探测规则），10Router 侧零改动——
  * 同步走既有 `providerSpecificData.creditDaddyWebSession.cookie` 传输（与 qoder 同形状）。
  *
+ * ⚠ 探测头必须与 10Router `services/usage/tokenharbor.js` 同款的浏览器形:裸 fetch 的 UA
+ * 会拿到「HTML 空壳 / bot 拦截」（配额标记根本不在 HTML 里，探测必然误报「登录未完成」）。
+ *
  * 测试用后门（仅测试改动探测地址）：环境变量 `CD_PROBE_<站点 id 大写,非字母数字→_>`，
  * 如 CD_PROBE_TOKENHARBOR 指向本地假站。生产配置永远取 probe.url。
  */
 
 import { fetchJsonRace } from './zcodeClient.js';
+
+/** 浏览器形探测头（对齐 10Router tokenharbor 探针：裸 UA 会被边缘节点喂空壳页） */
+export function dashboardHeaders(site) {
+  return {
+    Cookie: '',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    Referer: (site.homeUrl || site.probe.url.split('/').slice(0, 3).join('/')) + '/',
+    'Upgrade-Insecure-Requests': '1',
+    'User-Agent':
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+  };
+}
+
+/** 登录页壳判定（会话已失效被挡回登录页）：没有配额标记且页面主题就是「登录」表单 */
+function looksLikeLoginPage(html) {
+  return /sign\s?in|log\s?in/i.test(html);
+}
 
 export const COOKIE_SITES = [
   {
@@ -56,11 +77,15 @@ export async function verifySiteCookie(site, cookie, { fetchImpl } = {}) {
   const url = probeUrl(site);
   const doFetch = fetchImpl || ((u, init) => fetchJsonRace(u, { headers: init.headers, timeoutMs: 12000 }));
   try {
-    const r = await doFetch(url, { headers: { Cookie: String(cookie || ''), Accept: 'text/html,application/xhtml+xml' } });
+    const headers = { ...dashboardHeaders(site), Cookie: String(cookie || '') };
+    const r = await doFetch(url, { headers });
     if (r.status === 401 || r.status === 403) return { ok: false, reason: 'invalid', status: r.status };
     if (r.status !== 200) return { ok: false, reason: 'http', status: r.status };
     const text = await r.text();
-    if (site.probe.match && !text.includes(site.probe.match)) return { ok: false, reason: 'no-match', status: r.status };
+    if (site.probe.match && !text.includes(site.probe.match)) {
+      // 被挡回登录页 = 会话失效（与 10Router 的 AUTH_EXPIRED 分类对齐），不是「页面结构变化」
+      return { ok: false, reason: looksLikeLoginPage(text) ? 'invalid' : 'no-match', status: r.status };
+    }
     return { ok: true, status: r.status };
   } catch (e) {
     return { ok: false, reason: 'network', error: e?.message || String(e) };
