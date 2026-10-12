@@ -143,12 +143,36 @@ test('daemon 捕获端点：探测通过入库去重；401 拒绝；/api/cookie-
         req.end();
       });
       const row = sites.sites.find((x) => x.id === 'tokenharbor');
-      assert.equal(row.accountId, ok1.body.accountId);
+      assert.equal(row.accounts.length, 1, '每账号行:1 行');
+      assert.equal(row.accounts[0].id, ok1.body.accountId);
       assert.ok(row.capturedAt, '捕获时间已回显');
 
+      // 多账号轮换:换一份邮箱身份 → 新行;按身份再捕 → 原位轮换不重行
+      const okA = await post({ cookie: 'alive=1', diag: { cookieCount: 1 }, probeHtml: '<html>yang@a.com <h1>Free allowance 10%</h1></html>' });
+      assert.equal(okA.status, 200);
+      const okB = await post({ cookie: 'alive=1', diag: { cookieCount: 1 }, probeHtml: '<html>other@b.com <h1>Free allowance 20%</h1></html>' });
+      assert.equal(okB.status, 200);
+      assert.notEqual(okB.body.accountId, okA.body.accountId, '不同身份必须成新行');
+      const okA2 = await post({ cookie: 'alive=1', diag: { cookieCount: 1 }, probeHtml: '<html>yang@a.com <h1>Free allowance 30%</h1></html>' });
+      assert.equal(okA2.body.accountId, okA.body.accountId, '同身份=凭证轮换,不重行');
+      const sites2 = await new Promise((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port, path: '/api/cookie-sites' }, (res) => {
+          const chunks = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+      const row2 = sites2.sites.find((x) => x.id === 'tokenharbor');
+      assert.equal(row2.accounts.length, 3, '两笔有身份 + 一笔无身份单例 = 3 行');
+
       const accounts = JSON.parse(await fs.readFile(path.join(home, 'accounts.json'), 'utf8'));
-      const acc = accounts.find((a) => a.provider === 'tokenharbor');
-      assert.equal(accounts.filter((a) => a.provider === 'tokenharbor').length, 1, '不重复建行');
+      const rows = accounts.filter((a) => a.provider === 'tokenharbor');
+      assert.equal(rows.length, 3, '单例 1 + 两身份 2,共 3 行,不重复建行');
+      const names = rows.map((a) => a.name || '').sort().join('|');
+      assert.ok(names.includes('yang@a.com') && names.includes('other@b.com'), '行名带身份后缀');
+      const acc = rows.find((a) => !a.meta.identityHash);
       assert.equal(acc.token, 'alive=1; theme=light');
       assert.equal(acc.meta.cookieSiteSession.cookie, 'alive=1; theme=light');
     } finally {

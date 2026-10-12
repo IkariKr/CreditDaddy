@@ -2426,17 +2426,22 @@ function renderCookieSites() {
   if (!sites) { body.innerHTML = T('<div class="dim">加载中…</div>'); loadCookieSites().then(() => renderCookieSites()); return; }
   if (!sites.length) { body.innerHTML = T('<div class="muted-empty">暂无可捕获的供应商</div>'); return; }
   body.innerHTML = sites.map((site) => {
-    // 状态以 daemon 的 capturedAt 为准:面板 accounts 是脱敏视图(无 meta),不能用它判捕获状态
-    const stateTxt = site.capturedAt
-      ? T('<span class="dim">已捕获 ') + esc(fmtTime(site.capturedAt)) + '</span>'
+    const rows = site.accounts || [];
+    const stateTxt = rows.length
+      ? T('<span class="dim">已捕获 ') + rows.length + T(' 个会话</span>')
       : T('<span class="dim">未捕获</span>');
     const btn = canCapture
       ? '<button class="btn" data-capture-site="' + esc(site.id) + '">' + T('登录捕获') + '</button>'
       : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">登录捕获</button>');
     const hint = site.hint ? T('<div class="hint">') + esc(site.hint) + '</div>' : '';
+    const accRows = rows.map((acc) =>
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px">'
+      + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(acc.name) + '">' + esc(acc.name) + '</span>'
+      + '<span class="dim" style="flex:none">' + (acc.capturedAt ? esc(fmtTime(acc.capturedAt)) : '–') + '</span></div>').join('');
     return '<div style="border:1px solid var(--border-subtle);border-radius:10px;padding:10px 12px;display:grid;gap:6px">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'
-      + '<span><b>' + esc(site.label || site.name) + '</b> · ' + stateTxt + '</span>' + btn + '</div>' + hint + '</div>';
+      + '<span><b>' + esc(site.label || site.name) + '</b> · ' + stateTxt + '</span>' + btn + '</div>'
+      + hint + accRows + '</div>';
   }).join('');
 }
 function openCookieSitesModal() {

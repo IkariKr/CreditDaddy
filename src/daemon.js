@@ -55,7 +55,7 @@ import { productImpl } from './providers.js';
 import { readWorkbuddySessions, writeWorkbuddySession, workbuddyAuthDir, currentWorkbuddyUid } from './workbuddyLocal.js';
 import { refreshWorkbuddyToken } from './workbuddyClient.js';
 import { loadBuildInfo } from './buildInfo.js';
-import { COOKIE_SITES, getSite, verifySiteCookie, verifyProbeHtml } from './cookieSites.js';
+import { COOKIE_SITES, getSite, verifySiteCookie, verifyProbeHtml, extractIdentity, identityHashOf } from './cookieSites.js';
 import { liveToAccount as zcodeLiveAccount, switchTo as zcodeSwitchTo, currentZcodeUid, currentZcodeIdentity, detectZcode, ensureVirtualDeviceMid, terminateZcode, zcodeRunning } from './zcodeLocal.js';
 import { liveToAccount as mirasimLiveAccount, switchTo as mirasimSwitchTo, currentMirasimUid, detectMirasim, terminateMirasim, mirasimRunning } from './mirasimLocal.js';
 import { liveToAccount as catpawLiveAccount, switchTo as catpawSwitchTo, currentCatpawToken, detectCatpaw, terminateCatpaw } from './catpawLocal.js';
@@ -775,10 +775,13 @@ async function handleApi(req, res, url) {
     const accounts = await loadAccounts();
     return json(res, 200, {
       sites: COOKIE_SITES.map((site) => {
-        const acc = accounts.find((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id);
+        const rows = accounts
+          .filter((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id)
+          .map((a) => ({ id: a.id, name: a.name || site.accountName, capturedAt: a.meta?.cookieSiteSession?.capturedAt || null }));
+        const latest = rows.reduce((t, r) => (r.capturedAt && (!t || r.capturedAt > t) ? r.capturedAt : t), null);
         return {
           id: site.id, name: site.name, label: site.label, loginUrl: site.loginUrl, hint: site.hint,
-          accountId: acc?.id || null, capturedAt: acc?.meta?.cookieSiteSession?.capturedAt || null,
+          accountId: rows[0]?.id || null, capturedAt: latest, accounts: rows,
         };
       }),
     });
@@ -812,22 +815,31 @@ async function handleApi(req, res, url) {
     }
 
     const now = new Date().toISOString();
+    // 身份探测(免费账号要多账号轮换):从浏览器探针 HTML 里抽一次身份;
+    // 抽不到 → 无身份单例(与初版一致),不静默覆盖有身份的行。
+    const identity = probeHtml ? extractIdentity(site, probeHtml) : null;
+    const ih = identityHashOf(identity);
     let accountId = null;
     await withAccounts((list) => {
-      const hit = list.find((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id);
+      const hit = list.find((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id
+        && (ih ? a.meta?.identityHash === ih : !a.meta?.identityHash));
       if (hit) {
         hit.token = cookie;
-        hit.meta = { ...(hit.meta || {}), cookieSiteSession: { cookie, capturedAt: now } };
+        hit.meta = { ...(hit.meta || {}), cookieSiteSession: { cookie, capturedAt: now }, ...(ih ? { identityHash: ih } : {}) };
         hit.updatedAt = now;
-        if (!hit.name) hit.name = site.accountName;
         accountId = hit.id;
       } else {
-        const acc = normalizeAccountInput({ name: site.accountName, provider: site.provider, token: cookie, source: 'web-session', meta: { cookieSiteId: site.id, cookieSiteSession: { cookie, capturedAt: now } } });
+        const acc = normalizeAccountInput({
+          name: site.accountName + (identity ? `(${identity})` : ''),
+          provider: site.provider, token: cookie, source: 'web-session',
+          meta: { cookieSiteId: site.id, cookieSiteSession: { cookie, capturedAt: now }, ...(ih ? { identityHash: ih } : {}) },
+        });
         acc.verified = true;
         list.push(acc);
         accountId = acc.id;
       }
     });
+    if (ih) logger.info('COOKIE-SITE', '{name} 身份归户({identity},账号轮换键生效)', { name: site.name, identity });
     logger.info('COOKIE-SITE', '{name} cookie 捕获成功(探测通过,同步到 10Router 后卡片点亮)', { name: site.name });
     return json(res, 200, { ok: true, accountId });
   }

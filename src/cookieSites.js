@@ -41,6 +41,10 @@ export const COOKIE_SITES = [
     loginUrl: 'https://tokenharbor.ai/login',
     homeUrl: 'https://tokenharbor.ai',
     probe: { url: 'https://tokenharbor.ai/dashboard', match: 'Free allowance' },
+    // 免费账号要多账号轮换(#23 增补):身份从浏览器探针 HTML 里抽(邮箱通用正则)。
+    // 抽不到 → 归到「未识别身份」单例,不影响既有行;有多账号需求的站点在配置里
+    // 统一按这个抽,验证/合并逻辑对全表通用,不再一家一家硬编码。
+    identity: { fromHtml: /[\w.+-]+@[\w-]+\.[\w.]+/ },
     accountName: 'Token Harbor 网页会话',
     hint: '登录后 dashboard 才有 Free allowance 配额；凭据只存本机（账号库加密），同步到 10Router 时按 creditDaddyWebSession 形状传输。',
   },
@@ -102,4 +106,21 @@ export function verifyProbeHtml(site, html) {
     return { ok: false, reason: looksLikeLoginPage(text) ? 'invalid' : 'no-match' };
   }
   return { ok: true };
+}
+
+
+/** 从浏览器探针产 HTML 里抽登录身份(邮箱等);抽不到返 null(调用方按单例兜底)。 */
+export function extractIdentity(site, html) {
+  if (!site.identity || !site.identity.fromHtml) return null;
+  const m = site.identity.fromHtml.exec(String(html || ''));
+  return m && m[0] ? m[0] : null;
+}
+
+/** 归户键的短哈希(不暴露身份原文;merge/dedupe 都只比对它) */
+export function identityHashOf(value) {
+  if (!value) return null;
+  let h = 0;
+  const s = String(value);
+  for (let i = 0; i < s.length; i++) h = ((h * 31 + s.charCodeAt(i)) | 0) >>> 0;
+  return 'ih' + h.toString(36);
 }
