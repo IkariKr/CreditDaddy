@@ -14,6 +14,38 @@ const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { createPasswordStore } = require('./passwordStore');
 
+// 阻止 Windows 无控制台或标准输出管道破裂（如后台/脚本启动后管道关闭）时写输出抛出 EPIPE 导致未捕获异常崩溃
+for (const stream of [process.stdout, process.stderr]) {
+  if (stream) {
+    stream.on?.('error', (err) => {
+      if (err && (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED')) return;
+    });
+  }
+}
+for (const fn of ['log', 'info', 'warn', 'error', 'debug']) {
+  if (typeof console[fn] === 'function') {
+    const orig = console[fn].bind(console);
+    console[fn] = (...args) => {
+      try {
+        orig(...args);
+      } catch (err) {
+        if (err && (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED' || String(err).includes('EPIPE'))) {
+          return;
+        }
+        throw err;
+      }
+    };
+  }
+}
+process.on('uncaughtException', (err) => {
+  if (err && (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED' || String(err).includes('EPIPE'))) {
+    return;
+  }
+  try {
+    dialog.showErrorBox('CreditDaddy Error', String((err && err.stack) || err));
+  } catch {}
+});
+
 // 自动更新（electron-updater + GitHub Releases）。开发环境不装这个依赖也能跑，缺失时静默跳过
 let autoUpdater = null;
 try { ({ autoUpdater } = require('electron-updater')); } catch {}
@@ -142,6 +174,7 @@ function setupAutoUpdate() {
   if (process.platform !== 'win32') return;          // macOS 构建未签名，Squirrel 装不上，先只做 Win 自更新
   if (process.env.PORTABLE_EXECUTABLE_DIR) return;   // portable 解压自包含，覆盖式更新会丢用户数据
   if (autoUpdater) {
+    autoUpdater.logger = null;   // 禁用 electron-updater 内部写 console.info，防止向断开的管道写入引发 EPIPE
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.on('update-available', (info) => {
@@ -167,10 +200,12 @@ function setupAutoUpdate() {
     autoUpdater.on('error', () => {});   // 更新失败不影响主流程，托盘手动检查时会给出具体报错
   }
   const check = () => {
-    const p = autoUpdater
-      ? autoUpdater.checkForUpdates().catch(() => checkFallbackSilently())
-      : checkFallbackSilently();
-    p.catch(() => {});
+    try {
+      const p = autoUpdater
+        ? autoUpdater.checkForUpdates().catch(() => checkFallbackSilently())
+        : checkFallbackSilently();
+      p.catch(() => {});
+    } catch {}
   };
   setTimeout(check, 30_000).unref?.();
   setInterval(check, 6 * 60 * 60 * 1000).unref?.();
