@@ -2752,9 +2752,7 @@ async function cookieSiteCapture(siteId) {
   if (siteRows.length && site.singleSession !== false) {
     const choice = await uiConfirm(
       T('该站点已有 {n} 个已捕获会话。部分站点（如小米 MiMo）同一账号只保留一个网页会话——在持久登录窗里切换账号会使旧账号的会话失效（面板行转红，余额数字保留存档）。', { n: siteRows.length })
-        + T('
-
-「使用隐私窗口」以全新无痕会话捕获新账号，不影响已捕获账号（多账号并存推荐）。'),
+        + T('\n\n「使用隐私窗口」以全新无痕会话捕获新账号，不影响已捕获账号（多账号并存推荐）。'),
       T('登录捕获'), T('继续'), T('使用隐私窗口'));
     if (choice === false) return;            // 取消
     if (choice === 'alt') {                  // 隐私窗：无痕分区（不带 persistKey）
