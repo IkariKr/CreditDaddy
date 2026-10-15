@@ -565,7 +565,9 @@ async function openIncognitoWindow(url, { persistKey } = {}) {
   const authWin = new BrowserWindow({
     width: 480,
     height: 720,
-    title: Tt('登录（隐私窗口）'),
+    // 标题区分两种窗（用户可辨，不再靠猜）：持久窗复用已存登录态（可能直接进控制台）、
+    // 无痕窗全新会话（必然是登录页）。
+    title: Tt(isPersist ? '登录（会话复用）' : '登录（无痕窗口）'),
     icon: iconPath(),
     autoHideMenuBar: true,
     // 故意不设 parent：Windows 的 owner 级联（electron#26031/#12142）会在子窗销毁时连带
