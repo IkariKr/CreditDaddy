@@ -963,6 +963,7 @@ async function handleApi(req, res, url) {
       const hits = list.filter((a) => a.provider === kind && a.uid === probe.user_id);
       for (const a of hits) {
         a.meta = { ...(a.meta || {}), qoderWebSession: { cookie, capturedAt: now } };
+        delete a.meta.qoderWebDead;   // 新 cookie 落地即清失效标记（保活监视下一轮重新评估）
         a.updatedAt = now;
       }
       return hits.length;

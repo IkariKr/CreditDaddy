@@ -226,6 +226,11 @@ export function publicAccount(a) {
     qoderWebCapturedAt: String(a.provider).startsWith('qoder')
       ? (meta.qoderWebSession?.capturedAt || null)
       : null,
+    // 网页会话失效标记（保活监视每日探测，probeWebSession 拒绝即判死）——
+    // 只回布尔与时间、绝不回 Cookie。面板徽章据此从「过期」升级为「已失效」。
+    qoderWebDead: String(a.provider).startsWith('qoder')
+      ? (meta.qoderWebDead?.at || null)
+      : null,
     canSwitch: Boolean(meta.session?.account || meta.credentials || meta.qoderAuth || a.provider === 'catpaw' || a.provider === 'trae'),
     verified: a.verified ?? null,
     createdAt: a.createdAt,

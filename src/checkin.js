@@ -365,6 +365,7 @@ async function scheduleTick() {
 export async function startScheduler() {
   if (timerHandle) return;
   startUsageSyncScheduler();
+  startWebSessionWatch();
   warmZcodeAppVersion();
   if (await autoCheckinEnabled()) {
     scheduleTick();
@@ -390,4 +391,53 @@ export function stopScheduler() {
   timerHandle = null;
   nextTickAt = null;
   clearZcodeTimers();
+}
+
+
+// ── Qoder 网页会话保活监视（10R 联调反馈：三账号 cookie 齐过期才在 10R 卡面发现）──
+// 网页会话 cookie 无法离线续期（必须真浏览器登录），但可以**提前发现**：每日用已存
+// cookie 真探测一次（probeWebSession），失效落 meta.qoderWebDead——面板徽章从
+// 「7 天陈旧」升级成「已失效」红色态，导出提示同步点名，不再等 10R 卡面亮红。
+let wsWatchTimer = null;
+const WS_WATCH_INTERVAL_MS = 6 * 3600 * 1000;   // 每 6 小时一检（cookie 寿命以天计，足够密）
+
+/**
+ * 保活监视单轮（导出以便回归测试直测）：
+ *  - probeWebSession 明确拒绝（返回 null）→ 判死，落 meta.qoderWebDead
+ *  - 探测通过 → 清标记（复活）
+ *  - 网络异常（抛错）→ 保守不动标记（下一轮再试，避免抖动误杀）
+ */
+export async function runWebSessionWatchTick() {
+  const { probeWebSession } = await import('./qoderClient.js');
+  const accounts = await loadAccounts();
+  const qoders = accounts.filter((a) => String(a.provider || '').startsWith('qoder')
+    && a.meta?.qoderWebSession?.cookie);
+  for (const a of qoders) {
+    const cookie = a.meta.qoderWebSession.cookie;
+    let dead = false;
+    try {
+      const probe = await probeWebSession(a.provider, cookie);
+      dead = !probe?.user_id;   // 探测接口不认这份 cookie = 失效
+    } catch { continue; }       // 网络异常保守跳过（下一轮再试），只有明确被拒才判死
+    if (dead !== Boolean(a.meta.qoderWebDead)) {
+      await withAccounts((list) => {
+        const hit = list.find((x) => x.id === a.id);
+        if (!hit) return;
+        hit.meta = { ...(hit.meta || {}) };
+        if (dead) hit.meta.qoderWebDead = { at: new Date().toISOString() };
+        else delete hit.meta.qoderWebDead;
+        hit.updatedAt = new Date().toISOString();
+      });
+      if (dead) logger.warn('WEBSession', '{name} 网页会话已失效（探测接口拒绝）——请重新「浏览器登录」补 cookie', { name: a.name || a.id });
+    }
+  }
+}
+
+export function startWebSessionWatch() {
+  if (wsWatchTimer) return;
+  const tick = () => runWebSessionWatchTick().catch((e) =>
+    logger.warn('WEBSession', '网页会话保活监视失败:{err}', { err: e?.message || e }));
+  setTimeout(tick, 45 * 1000).unref?.();   // 启动 45 秒后先跑一轮首检
+  wsWatchTimer = setInterval(tick, WS_WATCH_INTERVAL_MS);
+  wsWatchTimer.unref?.();
 }

@@ -184,6 +184,7 @@
   .badge.prod { font-weight: 600; }
   .badge.web { font-weight: 600; cursor: help; }
   .badge.web-warn { color: var(--warn); background: var(--warn-soft); }
+  .badge.web-dead { color: var(--err); background: var(--err-soft, rgba(239,68,68,.12)); }
   .badge.prod.qoder { color: #6d28d9; background: rgba(124,58,237,.1); }
   .badge.prod.workbuddy { color: #0f766e; background: rgba(20,184,166,.12); }
   html[data-theme="dark"] .badge.prod.qoder { color: #b8a4ff; }
@@ -1637,6 +1638,7 @@ function cardHtml(a) {
     + '</div><div class="ops">'
     + (a.product === 'zcode' ? T('<button class="icon-btn" data-act="claim" title="活动领取（billing/preview → claim，可能需过一次验证码）">') + I.gift + '</button>' : '')
     + (canCheckin && (a.provider !== 'workbuddy-intl' || wbActOn()) ? '<button class="icon-btn' + (state.busy[a.id] ? ' busy' : '') + '" data-act="checkin" title="' + (a.provider === 'workbuddy-intl' ? T('发送活跃请求') : T('立即领取')) + '">' + (state.busy[a.id] ? I.refresh : I.play) + '</button>' : '')
+    + (a.qoderWebDead ? '<button class="icon-btn" data-act="webrenew" title="' + T('网页会话已失效——打开登录窗口重新授权，关闭窗口时自动补 cookie（API token 不受影响）') + '">' + I.swap + '</button>' : '')
     + (a.canSwitch && !isCurrent && st.cls !== 'fail' ? T('<button class="icon-btn" data-act="switch" title="切换 ') + (CLIENT_LABEL[a.product] ? T(CLIENT_LABEL[a.product]) : prodLabel(a.product)) + T(' 客户端到此账号">') + I.swap + '</button>' : '')
     + T('<button class="icon-btn" data-act="quota" title="刷新积分">') + I.refresh + '</button>'
     + T('<button class="icon-btn del" data-act="del" title="删除（点两次确认）">') + I.trash + '</button>'
@@ -3152,6 +3154,15 @@ async function onCardClick(e) {
   if (!id) return;
   const act = btn.dataset.act;
   if (act === 'checkin') return checkinOne(id);
+  if (act === 'webrenew') {
+    const a = state.accounts.find((x) => x.id === id);
+    if (!a) return;
+    // 与 deviceLogin 同款设备码流程，但预选该账号的 provider（qoder / qoder-cn）；
+    // 登录窗关闭时收割器把新 cookie 绑回同 uid 账号（daemon 既有链路）。
+    const sel = $('dev-provider');
+    if ([...sel.options].some((o) => o.value === a.provider && !o.hidden)) sel.value = a.provider;
+    return deviceLogin();
+  }
   if (act === 'quota') { loadQuotas([id]); return; }
   if (act === 'claim') return openClaim(id);
   if (act === 'switch') {
@@ -3891,9 +3902,16 @@ async function addToken() {
 function qoderWebBadge(a) {
   if (!String(a.provider || '').startsWith('qoder')) return '';
   const at = a.qoderWebCapturedAt;
+  const deadAt = a.qoderWebDead;
+  const proxyHint = a.provider === 'qoder' ? T('（国际版按 IP 识别地区：需先在「面板设置 → 网络出口」配置出口代理）') : '';
+  // 保活监视（每 6 小时真探测一次）判死的会话：红色徽章——不是「可能过期」而是确认失效，
+  // 10R 侧「套餐内 Credits」此刻已经拿不到明细（401 回退聚合行），重新登录才能恢复。
+  if (deadAt) {
+    const tip = T('网页会话已失效（') + fmtTime(deadAt).slice(0, 10) + T(' 探测确认）：10Router「套餐内 Credits」明细已回退聚合行，用「浏览器登录」重新登录一次 Qoder 即可补上') + proxyHint;
+    return '<span class="badge web web-dead" title="' + esc(tip) + '">' + T('网页会话已失效') + '</span>';
+  }
   if (at && Date.now() - new Date(at).getTime() <= 7 * 86400000) return '';
   const stale = Boolean(at);
-  const proxyHint = a.provider === 'qoder' ? T('（国际版按 IP 识别地区：需先在「面板设置 → 网络出口」配置出口代理）') : '';
   const tip = stale
     ? T('网页会话已超过 7 天（') + fmtTime(at).slice(0, 10) + T(' 抓取），可能已过期：导出到 10Router 后「套餐内 Credits」可能缺失，用「浏览器登录」重新登录一次 Qoder 即可补上') + proxyHint
     : T('缺少 Qoder 网页会话（Cookie）：导出到 10Router 后「套餐内 Credits」可能缺失，用「浏览器登录」登录一次 Qoder 即可自动抓取') + proxyHint;
@@ -3912,19 +3930,23 @@ function qoderWebSessionNote() {
     return a.provider === sel;
   });
   if (!list.length) return '';
-  const missing = [], stale = [];
+  const missing = [], stale = [], dead = [];
   for (const a of list) {
-    const at = a.qoderWebCapturedAt;
-    if (!at) missing.push(a);
-    else if (Date.now() - new Date(at).getTime() > 7 * 86400000) stale.push(a);
+    if (a.qoderWebDead) dead.push(a);   // 保活监视确认失效——比「超过 7 天」更严重，单独点名
+    else {
+      const at = a.qoderWebCapturedAt;
+      if (!at) missing.push(a);
+      else if (Date.now() - new Date(at).getTime() > 7 * 86400000) stale.push(a);
+    }
   }
-  if (!missing.length && !stale.length) return '';
+  if (!missing.length && !stale.length && !dead.length) return '';
   const names = (arr) => arr.map((x) => x.name || x.email || x.uid || x.id).join(T('、'));
   const bits = [];
+  if (dead.length) bits.push(T('会话已失效：') + names(dead));
   if (missing.length) bits.push(T('没有网页会话：') + names(missing));
   if (stale.length) bits.push(T('会话已超过 7 天：') + names(stale));
   return T('10router 的「套餐内 Credits」逐资源包明细依赖 Qoder 网页会话（') + bits.join(T('；'))
-    + T('）。这些账号过去后套餐积分可能显示缺失——在「浏览器登录」重新登录一次 Qoder 再导出即可补上。');
+    + T('）。这些账号过去后套餐积分会缺失——在「浏览器登录」重新登录一次 Qoder 再导出即可补上。');
 }
 function refreshExportNote() {
   const msg = qoderWebSessionNote();
