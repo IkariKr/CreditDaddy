@@ -13,6 +13,11 @@ import path from 'node:path';
 import http from 'node:http';
 
 process.env.CREDITDADDY_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'creditdaddy-csite-'));
+// 预加载 logger：归档目录钉在本文件级临时 home（不随用例切换、也不会被逐用例 rm）。
+// 否则第一个 import daemon 的用例里 logger 才初始化，归档流句柄开在用例临时目录上——
+// Windows/libuv 允许 delete-pending 但目录在句柄关闭前不消失，fs.rm 必吃 ENOTEMPTY
+// （Node 20 CI 确定性翻车，Node 24 时序碰巧赢）。
+await import('../src/logger.js');
 
 const { serializeCookies, getSite, siteForLoginUrl, verifySiteCookie, COOKIE_SITES } = await import('../src/cookieSites.js');
 const { buildConnPayload, mapProviderId } = await import('../src/tenrouterAccounts.js');

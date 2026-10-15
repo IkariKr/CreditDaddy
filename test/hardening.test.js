@@ -9,6 +9,9 @@ import path from 'node:path';
 import http from 'node:http';
 
 process.env.CREDITDADDY_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'creditdaddy-hard-'));
+// 钉住 logger 归档目录到文件级临时 home（同 cookiesites.test.js 的缘由：Windows 上
+// 用例级 home 被 rm 时归档流句柄未关，delete-pending 目录 rmdir 必吃 ENOTEMPTY）
+await import('../src/logger.js');
 
 const { sealTransfer, openTransfer, TransferError } = await import('../src/transfer.js');
 const { addAccount } = await import('../src/accounts.js');

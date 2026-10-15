@@ -51,6 +51,10 @@ function archiveLine(line) {
       archiveStream = fsSync.createWriteStream(path.join(archiveDir, `daemon-${day}.log`), { flags: 'a' });
       jsonlFile = path.join(archiveDir, `daemon-${day}.jsonl`);
       jsonlStream = fsSync.createWriteStream(jsonlFile, { flags: 'a' });
+      // 新流也必须挂 error 兜底：Windows 上写盘可能异步报 EBUSY/EPERM，WriteStream
+      // 无 error 监听时抛未捕获异常直接掀翻进程（跨轮换的那两份挂了，新建的漏了）。
+      archiveStream.on('error', () => {});
+      jsonlStream.on('error', () => {});
       archiveDay = day;
     }
     archiveStream.write('[' + line.at + '] ' + line.level.toUpperCase() + ' [' + line.tag + '] ' + line.msg + '\n');
