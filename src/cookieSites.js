@@ -65,7 +65,7 @@ export const COOKIE_SITES = [
     id: 'tokenharbor',
     name: 'Token Harbor',
     provider: 'tokenharbor',
-    label: 'Token Harbor 免费额度（10Router 卡片）',
+    label: 'Token Harbor 免费额度',
     loginUrl: 'https://tokenharbor.ai/login',
     homeUrl: 'https://tokenharbor.ai',
     // 探测标记：由于 Token Harbor 的 dashboard 页面将 Free allowance 移至客户端动态组件中渲染，
@@ -93,7 +93,7 @@ export const COOKIE_SITES = [
     id: 'xiaomi-mimo',
     name: 'Xiaomi MiMo',
     provider: 'xiaomi-mimo',
-    label: '小米 MiMo 控制台余额（10Router 卡片）',
+    label: '小米 MiMo 控制台余额',
     loginUrl: 'https://platform.xiaomimimo.com/console/balance',
     homeUrl: 'https://platform.xiaomimimo.com',
     probe: {
@@ -108,7 +108,7 @@ export const COOKIE_SITES = [
     id: 'modelscope',
     name: 'ModelScope 魔搭',
     provider: 'modelscope',
-    label: 'ModelScope 魔方余额（10Router 卡片）',
+    label: 'ModelScope 魔方余额',
     loginUrl: 'https://modelscope.cn',
     homeUrl: 'https://modelscope.cn',
     // 魔方余额 API 本身就是探测（GET /openapi/v1/magicubes/balance 带会话 cookie）；
@@ -123,7 +123,7 @@ export const COOKIE_SITES = [
     id: 'river',
     name: 'River AI',
     provider: 'river',
-    label: 'River AI 免费额度（10Router 卡片）',
+    label: 'River AI 免费额度',
     loginUrl: 'https://console.river.ai',
     homeUrl: 'https://console.river.ai',
     // 凭据主体是 WorkOS 会话——实测（2026-10-14）SPA 的 token 只在内存 Map，localStorage
@@ -141,7 +141,7 @@ export const COOKIE_SITES = [
     id: 'xiaohuanxiong',
     name: '办公小浣熊',
     provider: 'xiaohuanxiong',
-    label: '办公小浣熊积分余额（10Router 卡片）',
+    label: '办公小浣熊积分余额',
     loginUrl: 'https://office.xiaohuanxiong.com/home',
     homeUrl: 'https://office.xiaohuanxiong.com',
     // ⚠ API 在裸域 xiaohuanxiong.com（office 子域只负责页面，拼错 307 跳登录像会话失效）；
@@ -158,7 +158,7 @@ export const COOKIE_SITES = [
     id: 'longcat',
     name: 'LongCat',
     provider: 'longcat',
-    label: 'LongCat Token 资源包（10Router 卡片）',
+    label: 'LongCat Token 资源包',
     loginUrl: 'https://longcat.chat/pc/login',
     homeUrl: 'https://longcat.chat',
     // 资源包汇总 API 即探测：带对 cookie 返 200 {code:0}，未登录 401「用户未登录」（2026-10-15 实测）

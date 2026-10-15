@@ -1747,5 +1747,11 @@
   "（密钥被拒——壳与 daemon 版本或实例不一致？）": "(키 거부—셸과 daemon 버전/인스턴스 불일치?)",
   "（密钥被拒——壳与 daemon 实例不一致？）": "(키 거부—셸과 daemon 인스턴스 불일치?)",
   "连接失败：": "연결 실패: ",
-  "{name} 捕获后单路推卡失败:{err}": "{name} 캡처 후 단일 카드 푸시 실패: {err}"
+  "{name} 捕获后单路推卡失败:{err}": "{name} 캡처 후 단일 카드 푸시 실패: {err}",
+  "Token Harbor 免费额度": "Token Harbor 무료 할당량",
+  "小米 MiMo 控制台余额": "샤오미 MiMo 콘솔 잔액 ",
+  "ModelScope 魔方余额": "ModelScope Magicube 잔액",
+  "River AI 免费额度": "River AI 무료 크레딧",
+  "办公小浣熊积分余额": "오피스 라쿤 포인트 잔액 ",
+  "LongCat Token 资源包": "LongCat 토큰 패키지"
 }

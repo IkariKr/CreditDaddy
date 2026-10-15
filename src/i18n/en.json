@@ -1747,5 +1747,11 @@
   "（密钥被拒——壳与 daemon 版本或实例不一致？）": " (key rejected — desktop shell and daemon version/instance mismatch?)",
   "（密钥被拒——壳与 daemon 实例不一致？）": " (key rejected — desktop shell and daemon instance mismatch?)",
   "连接失败：": "Connection failed: ",
-  "{name} 捕获后单路推卡失败:{err}": "{name} post-capture single quota push failed: {err}"
+  "{name} 捕获后单路推卡失败:{err}": "{name} post-capture single quota push failed: {err}",
+  "Token Harbor 免费额度": "Token Harbor free allowance",
+  "小米 MiMo 控制台余额": "Xiaomi MiMo Console Balance",
+  "ModelScope 魔方余额": "ModelScope Magicube balance",
+  "River AI 免费额度": "River AI Free Credit",
+  "办公小浣熊积分余额": "Office Raccoon points balance",
+  "LongCat Token 资源包": "LongCat token packs"
 }

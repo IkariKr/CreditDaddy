@@ -2506,9 +2506,9 @@ function renderFreePool() {
     // 「粘贴捕获」：部分站点（小米账号 SSO）登录态挂设备指纹，CD 无痕窗也会被静默 SSO
     // 拉回同一账号——多号并存走系统浏览器登录新号后手动粘 cookie（不依赖登录窗）。
     const pasteBtn = ' <button class="btn" data-paste-capture="' + esc(site.id) + '" title="' + T('在其他浏览器登录该站点后，把会话 cookie 粘贴进来捕获（多账号并存的可靠路径）') + '">' + T('粘贴捕获') + '</button>';
-    // 「清除已存会话」：登录窗是持久分区（本机留存登录态，第二轮捕获免登录）——
-    // 已经捕获过至少一个会话（=窗里登录过）才出示；点击抹掉该站点落盘的登录分区。
-    const clearBtn = canCapture && rows.length
+    // 「清除已存会话」：登录窗是持久分区（本机留存登录态，换号/多账号时需要清除）——
+    // 桌面版环境下始终出示，方便用户即使未捕获成功（如登录了一半或被卡在旧态）也能重置。
+    const clearBtn = canCapture
       ? ' <button class="btn" data-clear-session="' + esc(site.id) + '" title="' + T('抹掉本机为该站点留存的登录会话（下次捕获需要重新登录）') + '">' + T('清除已存会话') + '</button>'
       : '';
     const hint = site.hint ? '<div class="hint" style="margin:2px 0 6px">' + esc(T(site.hint)) + '</div>' : '';
