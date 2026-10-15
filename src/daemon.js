@@ -1185,9 +1185,12 @@ async function handleApi(req, res, url) {
     // 未登录 401「用户未登录」）。纯只读——包为购买/赠送发放，无签到动作端点。
     let lcPacks = null;
     let lcSession = null;
+    let longcatSnapshot = null;
     if (site.id === 'longcat') {
       try {
-        const { fetchLongcatPacks, longcatSnapshot, fetchLongcatIdentity } = await import('./longcatClient.js');
+        const lcMod = await import('./longcatClient.js');
+        const { fetchLongcatPacks, fetchLongcatIdentity } = lcMod;
+        longcatSnapshot = lcMod.longcatSnapshot;
         if (!cookie) {
           logger.warn('COOKIE-SITE', '{name} 未读到会话 cookie', { name: site.name });
           return json(res, 400, { error: '未读到 LongCat 登录会话，请在登录窗完成登录后再关闭' });
