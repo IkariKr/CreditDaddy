@@ -1726,5 +1726,9 @@
   " 探测确认）：10Router「套餐内 Credits」明细已回退聚合行，用「浏览器登录」重新登录一次 Qoder 即可补上": " confirmed by probe): 10Router's \"in-plan Credits\" details have fallen back to the aggregate row. Sign in to Qoder once via \"Browser Login\" to restore.",
   "网页会话已失效": "Web session expired",
   "会话已失效：": "Sessions expired: ",
-  "）。这些账号过去后套餐积分会缺失——在「浏览器登录」重新登录一次 Qoder 再导出即可补上。": "). In-plan Credits will be missing for these accounts — sign in to Qoder once via \"Browser Login\" and re-export to restore."
+  "）。这些账号过去后套餐积分会缺失——在「浏览器登录」重新登录一次 Qoder 再导出即可补上。": "). In-plan Credits will be missing for these accounts — sign in to Qoder once via \"Browser Login\" and re-export to restore.",
+  "备选": "Alternative",
+  "该站点已有 {n} 个已捕获会话。部分站点（如小米 MiMo）同一账号只保留一个网页会话——在持久登录窗里切换账号会使旧账号的会话失效（面板行转红，余额数字保留存档）。": "This site already has {n} captured sessions. Some sites (e.g. Xiaomi MiMo) keep only ONE web session per account — switching accounts in the persistent login window will invalidate the old account's session (its row turns red; the balance figure is kept as an archive).",
+  "\n\n「使用隐私窗口」以全新无痕会话捕获新账号，不影响已捕获账号（多账号并存推荐）。": "\n\n\"Use incognito window\" captures the new account in a brand-new incognito session without touching captured ones (recommended for multiple accounts).",
+  "使用隐私窗口": "Use incognito window"
 }

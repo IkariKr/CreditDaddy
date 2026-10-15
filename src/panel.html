@@ -852,7 +852,7 @@
     <div class="modal-title"><span id="dlg-title"></span><button class="close" data-close>✕</button></div>
     <div class="hint" id="dlg-msg" style="white-space:pre-wrap"></div>
     <div class="field" id="dlg-field" style="margin-top:10px"><input class="input" id="dlg-input"></div>
-    <div class="modal-actions"><button class="btn" data-close>取消</button><button class="btn primary" id="dlg-ok" data-i18n="确定">确定</button></div>
+    <div class="modal-actions"><button class="btn" data-close>取消</button><button class="btn" id="dlg-alt" style="display:none">备选</button><button class="btn primary" id="dlg-ok" data-i18n="确定">确定</button></div>
   </div>
 </div>
 
@@ -2744,14 +2744,25 @@ $('free-settings-push-now')?.addEventListener('click', async () => {
 async function cookieSiteCapture(siteId) {
   const site = (state.cookieSites || []).find((x) => x.id === siteId);
   if (!site || !window.creditdaddy || typeof window.creditdaddy.openAuthWindow !== 'function') return;
-  // 单会话站点（服务端同号新登录踢旧会话——MiMo 实测）：该站点已有捕获行时，
-  // 在窗里登出旧号换登新号会把旧号的会话作废——先知情确认再开窗。
-  const hasRows = (state.cookieSites || []).some((x) => x.id === siteId && (x.accounts || []).length);
-  if (hasRows && site.singleSession !== false) {
-    const ok = await uiConfirm(
-      T('该站点已有 {n} 个已捕获会话。部分站点（如小米 MiMo）同一账号只保留一个网页会话——在登录窗里切换账号会使旧账号的会话失效（面板行转红，余额数字保留存档）。确定继续？', { n: (state.cookieSites.find((x) => x.id === siteId).accounts || []).length }),
-      T('登录捕获'), T('继续'));
-    if (!ok) return;
+  // 单会话站点（服务端同号新登录踢旧会话——MiMo 实测）：该站点已有捕获行时给出三选：
+  //  继续持久窗（默认）= 复用已存登录态，但切号要登出旧号 → 旧号会话作废；
+  //  隐私窗 = 全新无痕会话，不碰已存分区 → 新旧账号并存（单会话站点的多号解法）；
+  //  取消 = 不动。
+  const siteRows = (state.cookieSites.find((x) => x.id === siteId)?.accounts || []);
+  if (siteRows.length && site.singleSession !== false) {
+    const choice = await uiConfirm(
+      T('该站点已有 {n} 个已捕获会话。部分站点（如小米 MiMo）同一账号只保留一个网页会话——在持久登录窗里切换账号会使旧账号的会话失效（面板行转红，余额数字保留存档）。', { n: siteRows.length })
+        + T('
+
+「使用隐私窗口」以全新无痕会话捕获新账号，不影响已捕获账号（多账号并存推荐）。'),
+      T('登录捕获'), T('继续'), T('使用隐私窗口'));
+    if (choice === false) return;            // 取消
+    if (choice === 'alt') {                  // 隐私窗：无痕分区（不带 persistKey）
+      const r = await window.creditdaddy.openAuthWindow(site.loginUrl);
+      if (!r || r.ok !== true) toast(T('打开登录窗口失败：') + ((r && r.error) || ''), false);
+      return;
+    }
+    // choice === true → 继续走持久窗
   }
   // cookie-site 站点走持久登录分区：本窗登录一次，下一轮捕获/重探复用会话（免二次登录，
   // 谷歌 SSO 场景免重复验证码）。「清除已存会话」可随时抹掉这份落盘会话。
@@ -3442,7 +3453,7 @@ function closeModal(id) { $(id).classList.remove('show'); if (id === 'm-add') de
 // 返回 Promise：确认 → true / 输入的文本；取消 → false / null
 let dialogResolve = null;
 function settleDialog(v) { const r = dialogResolve; dialogResolve = null; if (r) r(v); }
-function uiDialog({ title, message, input, okText }) {
+function uiDialog({ title, message, input, okText, altText }) {
   settleDialog(null);
   $('dlg-title').textContent = title || '';
   $('dlg-msg').textContent = message || '';
@@ -3450,13 +3461,19 @@ function uiDialog({ title, message, input, okText }) {
   $('dlg-field').style.display = input ? '' : 'none';
   if (input) { $('dlg-input').type = input.type || 'text'; $('dlg-input').value = input.value || ''; $('dlg-input').placeholder = input.placeholder || ''; }
   $('dlg-ok').textContent = okText || T('确定');
+  // 三键对话框：altText 存在时出示备选按钮（点击返回 'alt'）——
+  // 供「继续 / 用隐私窗捕获」这类三选场景，不新增弹窗结构。
+  const altBtn = $('dlg-alt');
+  if (altText) { altBtn.textContent = altText; altBtn.style.display = ''; }
+  else altBtn.style.display = 'none';
   openModal('m-dialog');
   setTimeout(() => (input ? $('dlg-input') : $('dlg-ok')).focus(), 30);
   return new Promise((resolve) => { dialogResolve = (v) => resolve(input ? v : v !== null); });
 }
-const uiConfirm = (message, title, okText) => uiDialog({ title: title || T('请确认'), message, okText });
+const uiConfirm = (message, title, okText, altText) => uiDialog({ title: title || T('请确认'), message, okText, ...(altText ? { altText } : {}) });
 const uiPrompt = (title, value, opts = {}) => uiDialog({ title, message: opts.message, input: { value, type: opts.type, placeholder: opts.placeholder }, okText: opts.okText });
 function okDialog() { const v = $('dlg-field').style.display === 'none' ? true : $('dlg-input').value; $('m-dialog').classList.remove('show'); settleDialog(v); }
+$('dlg-alt')?.addEventListener('click', () => { $('m-dialog').classList.remove('show'); settleDialog('alt'); });
 $('dlg-ok').addEventListener('click', okDialog);
 $('dlg-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') okDialog(); });
 
