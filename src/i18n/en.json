@@ -1682,7 +1682,6 @@
   "无效的会话标识": "Invalid session identifier",
   "（数据 {m}-{d} {hh}:{mm}）": " (data from {m}-{d} {hh}:{mm})",
   "会话已失效（后台低频重试等待中，跳过本轮 live 拉取）": "Session expired (background low-frequency retry pending — live fetch skipped this round)",
-  "收割的 cookie 里没有 raccoon_token（站点尚未写回登录凭据——请在站点内重新触发一次登录再关窗）": "No raccoon_token in the harvested cookies (site has not written back the login credential yet — trigger a sign-in inside the site once more, then close the window)",
   "登录凭据（{name}）尚未由站点写回——捕获可能不完整，如卡片显示会话失效请稍后在站点内重新触发一次登录": "Login credential ({name}) not yet written back by the site — capture may be incomplete. If the card shows session expired, trigger a sign-in inside the site once more and retry",
   "LongCat Token 资源包（10Router 卡片）": "LongCat token packs (10Router card)",
   "LongCat 网页会话": "LongCat web session",
@@ -1740,6 +1739,5 @@
   "小米 MiMo 控制台余额": "Xiaomi MiMo Console Balance",
   "ModelScope 魔方余额": "ModelScope Magicube balance",
   "River AI 免费额度": "River AI Free Credit",
-  "办公小浣熊积分余额": "Office Raccoon points balance",
   "LongCat Token 资源包": "LongCat token packs"
 }
