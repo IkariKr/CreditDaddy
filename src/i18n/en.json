@@ -1733,5 +1733,15 @@
   "使用隐私窗口": "Use incognito window",
   "魔粒": "Magicubes",
   "登录（会话复用）": "Sign in (session reuse)",
-  "登录（无痕窗口）": "Sign in (incognito)"
+  "登录（无痕窗口）": "Sign in (incognito)",
+  "粘贴捕获": "Paste capture",
+  "在其他浏览器登录该站点后，把会话 cookie 粘贴进来捕获（多账号并存的可靠路径）": "After signing in to this site in another browser, paste the session cookie here to capture it (the reliable path for multiple accounts)",
+  "粘贴 {name} 的会话 cookie": "Paste the session cookie for {name}",
+  "捕获": "Capture",
+  "在系统浏览器登录该站点后：F12 → Network（网络）→ 任选一个发往该站的请求 → Request Headers → 复制 Cookie 的整段值粘贴到这里。会话 cookie 只存本机。": "After signing in via your system browser: F12 → Network → pick any request to the site → Request Headers → copy the entire Cookie value and paste it here. The session cookie stays on this machine.",
+  "内容不像 cookie（应为 name=value; … 形式）": "That doesn't look like a cookie (expected name=value; ... format)",
+  "捕获失败": "Capture failed",
+  "捕获失败：": "Capture failed: ",
+  "{kind} 网页会话收割上报失败：{note}": "{kind} web session harvest upload failed: {note}",
+  "cookie 收割上报失败：{err}": "cookie harvest upload failed: {err}"
 }

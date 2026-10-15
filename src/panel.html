@@ -2503,6 +2503,9 @@ function renderFreePool() {
     const btn = canCapture
       ? '<button class="btn primary" data-capture-site="' + esc(site.id) + '">' + I.plus + T('登录捕获') + '</button>'
       : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">登录捕获</button>');
+    // 「粘贴捕获」：部分站点（小米账号 SSO）登录态挂设备指纹，CD 无痕窗也会被静默 SSO
+    // 拉回同一账号——多号并存走系统浏览器登录新号后手动粘 cookie（不依赖登录窗）。
+    const pasteBtn = ' <button class="btn" data-paste-capture="' + esc(site.id) + '" title="' + T('在其他浏览器登录该站点后，把会话 cookie 粘贴进来捕获（多账号并存的可靠路径）') + '">' + T('粘贴捕获') + '</button>';
     // 「清除已存会话」：登录窗是持久分区（本机留存登录态，第二轮捕获免登录）——
     // 已经捕获过至少一个会话（=窗里登录过）才出示；点击抹掉该站点落盘的登录分区。
     const clearBtn = canCapture && rows.length
@@ -2608,7 +2611,7 @@ function renderFreePool() {
       + '<span style="font-size:14px;font-weight:700">' + esc(site.label || site.name) + '</span>'
       + stateTxt
       + '</div>'
-      + '<div style="display:flex;align-items:center;gap:6px">' + btn + clearBtn + '</div>'
+      + '<div style="display:flex;align-items:center;gap:6px">' + btn + pasteBtn + clearBtn + '</div>'
       + '</div>'
       + hint
       + '</div>'
@@ -2656,6 +2659,8 @@ document.getElementById('m-cookie')?.addEventListener('click', (e) => {
 $('view-free')?.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('[data-capture-site]');
   if (b) { cookieSiteCapture(b.dataset.captureSite); return; }
+  const pb = e.target.closest && e.target.closest('[data-paste-capture]');
+  if (pb) { cookieSitePasteCapture(pb.dataset.pasteCapture); return; }
   // 「清除已存会话」：抹掉该站点持久登录分区（下次捕获需重新登录），二次确认防误触
   const clr = e.target.closest && e.target.closest('[data-clear-session]');
   if (clr) {
@@ -2766,6 +2771,29 @@ async function cookieSiteCapture(siteId) {
   // 谷歌 SSO 场景免重复验证码）。「清除已存会话」可随时抹掉这份落盘会话。
   const r = await window.creditdaddy.openAuthWindow(site.loginUrl, { persistKey: 'cookie-site-' + siteId });
   if (!r || r.ok !== true) toast(T('打开登录窗口失败：') + ((r && r.error) || ''), false);
+}
+// 「粘贴捕获」：用户在系统浏览器（与 CD 无关的 profile）登录站点后，F12 → Application →
+// Cookies 复制整串（name=value; ...）粘进来——daemon 走与收割器同一条 capture 端点
+// （探测/归户/推卡全链一致）。小米 SSO 这类「登录态挂设备指纹」的站点，多号并存的可靠路径。
+async function cookieSitePasteCapture(siteId) {
+  const site = (state.cookieSites || []).find((x) => x.id === siteId);
+  if (!site) return;
+  const cookie = await uiPrompt(T('粘贴 {name} 的会话 cookie', { name: site.name }), '', {
+    type: 'text',
+    okText: T('捕获'),
+    placeholder: 'name1=value1; name2=value2; …',
+    message: T('在系统浏览器登录该站点后：F12 → Network（网络）→ 任选一个发往该站的请求 → Request Headers → 复制 Cookie 的整段值粘贴到这里。会话 cookie 只存本机。'),
+  });
+  if (cookie === null || !cookie.trim()) return;
+  if (!/\w+=[^;\s]/.test(cookie.trim())) { toast(T('内容不像 cookie（应为 name=value; … 形式）'), false); return; }
+  try {
+    const r = await api('/api/cookie-sites/' + encodeURIComponent(siteId) + '/capture', { json: { cookie: cookie.trim() } });
+    if (r && r.ok) {
+      toast(T('{name} cookie 捕获成功，同步到 10Router 后卡片点亮', { name: site.name }), true);
+      state.cookieSites = null;
+      loadCookieSites(true).then(() => { if (state.view === 'free') renderFreePool(); });
+    } else toast(T('捕获失败'), false);
+  } catch (e) { toast(T('捕获失败：') + e.message, false); }
 }
 async function cookieSiteClearSession(siteId) {
   if (!window.creditdaddy || typeof window.creditdaddy.clearCookieSiteSession !== 'function') return;

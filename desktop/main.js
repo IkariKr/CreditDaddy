@@ -649,11 +649,20 @@ async function harvestQoderWebSession(ses) {
   for (const t of targets) {
     const cookies = await ses.cookies.get({ url: t.url }).catch(() => []);
     const cookie = (cookies || []).map((c) => c.name + '=' + c.value).join('; ');
-    await fetch('http://127.0.0.1:' + boundPort + '/api/auth/qoder-web-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(panelKey ? { 'x-qd-key': panelKey } : {}) },
-      body: JSON.stringify({ kind: t.kind, cookie, diag: { cookieCount: (cookies || []).length } }),
-    }).catch(() => {});
+    // 上报结果不再静默：连接失败 / 401 被「网页会话收割」日志缺席时无从查起——
+    // 状态码与失败原因落 tray 通知（daemon 日志是 daemon 侧的，desktop 侧失败它看不见）。
+    let note = '';
+    try {
+      const res = await fetch('http://127.0.0.1:' + boundPort + '/api/auth/qoder-web-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(panelKey ? { 'x-qd-key': panelKey } : {}) },
+        body: JSON.stringify({ kind: t.kind, cookie, diag: { cookieCount: (cookies || []).length } }),
+      });
+      if (!res.ok) note = 'HTTP ' + res.status + (res.status === 401 ? '（密钥被拒——壳与 daemon 版本或实例不一致？）' : '');
+    } catch (e) {
+      note = '连接失败：' + (e?.cause?.code || e?.message || e);
+    }
+    if (note) notify('Qoder', Tt('{kind} 网页会话收割上报失败：{note}', { kind: t.kind, note }));
   }
 }
 
@@ -775,7 +784,10 @@ async function harvestCookieSiteSession(ses, site) {
   const storageCount = Object.values(storage || {}).filter((v) => typeof v === 'string' && v.trim()).length;
   // 先拿浏览器视角 HTML(Node 探测会拿风控/空壳,造成「登录明明成功却报会话无效」)
   const probeHtml = storageSite ? null : await probeViaHiddenWindow(ses, site).catch(() => null);
-  const r = await fetch('http://127.0.0.1:' + boundPort + '/api/cookie-sites/' + site.id + '/capture', {
+  let r = null;
+  let harvestErr = '';
+  try {
+    r = await fetch('http://127.0.0.1:' + boundPort + '/api/cookie-sites/' + site.id + '/capture', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(key ? { 'x-qd-key': key } : {}) },
     body: JSON.stringify({
@@ -785,7 +797,12 @@ async function harvestCookieSiteSession(ses, site) {
       diag: { cookieCount: (all || []).length, storageCount, cookieNames: (all || []).map((c) => c.name) },
       probeHtml,
     }),
-  }).catch(() => null);
+    });
+    if (!r.ok) harvestErr = 'HTTP ' + r.status + (r.status === 401 ? '（密钥被拒——壳与 daemon 实例不一致？）' : '');
+  } catch (e) {
+    harvestErr = '连接失败：' + (e?.cause?.code || e?.message || e);
+  }
+  if (harvestErr) notify(site.name, Tt('cookie 收割上报失败：{err}', { err: harvestErr }));
   if (r && r.ok) {
     try { if (win && !win.isDestroyed()) win.webContents.send('cookie-site:captured', { site: site.id, name: site.name, ok: true }); } catch { /* ignore */ }
     notify(site.name, Tt('cookie 捕获成功，同步到 10Router 后卡片点亮'));
