@@ -552,9 +552,13 @@ async function openIncognitoWindow(url, { persistKey } = {}) {
   const partition = persistKey ? 'persist:' + persistKey : 'incognito-' + crypto.randomUUID();
   const ses = session.fromPartition(partition);   // 无 persist: 前缀 → 内存态，进程退出即消失
   const isPersist = Boolean(persistKey);
-  // 国际版按 IP 识别地区（qoder.com）：配置了出口代理时登录窗显式走它；
-  // 未配置则保持默认（Electron 窗口本来就跟随系统代理，不覆盖）
-  if (/\/\/qoder\.com(\/|$)/.test(url)) {
+  // 按 IP 识别地区的站点（qoder.com 国际版 + cookie-site 捕获窗，如 Token Harbor 对大陆/港澳封锁）：
+  // 配置了出口代理时登录窗显式走它；未配置则保持默认（Electron 窗口本来就跟随系统代理，不覆盖）。
+  // 登录窗与 daemon 探测同走「网络出口（全局）」——两边出口 IP 一致，避免窗内登录成功、
+  // 探测被拒的错位（同一个站两种出口，一边通一边拒最难排查）。规则型代理（Clash 等）
+  // 对国内站点自动直连，不影响 MiMo / 小浣熊 / LongCat 等国内站登录。
+  const cookieSite = cookieSitesLib && typeof cookieSitesLib.siteForLoginUrl === 'function' ? cookieSitesLib.siteForLoginUrl(url) : null;
+  if (/\/\/qoder\.com(\/|$)/.test(url) || cookieSite) {
     const proxy = daemonMod && typeof daemonMod.getLoginProxyUrl === 'function' ? daemonMod.getLoginProxyUrl() : null;
     if (proxy) await ses.setProxy({ proxyRules: proxy, proxyBypassRules: '<local>' }).catch(() => {});
   }
@@ -611,7 +615,7 @@ async function openIncognitoWindow(url, { persistKey } = {}) {
   });
   guardMainAfterClose(authWin);
   // 登录窗口按目标站点登记收割器(#23 通用 cookie 捕获;Qoder 维持专属通道)
-  const cookieSite = cookieSitesLib && typeof cookieSitesLib.siteForLoginUrl === 'function' ? cookieSitesLib.siteForLoginUrl(url) : null;
+  // （cookieSite 已在开窗前计算：捕获窗的出口代理也按它显式设置）
   authWin.on('closed', () => {
     // 清空前抢救会话 Cookie（httpOnly，页面脚本拿不到，只有 session API 能读）。
     // 必须先等收割完成再清存储——两者并发的话 clearStorageData 会抢先抹掉 Cookie，
