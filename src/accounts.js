@@ -17,7 +17,6 @@ export { displayNameFrom };
  */
 async function attachPendingWebSession(target) {
   if (!String(target.provider || '').startsWith('qoder') || !target.uid) return false;
-  if (target.meta?.qoderWebSession) return false;
   // 与 daemon 写入暂存会话（/api/auth/qoder-web-session）共用 withSettings 队列，
   // 否则两边同时「读 pending → 改 → 写回」会把对方的暂存项冲掉
   const item = await withSettings((settings) => {
@@ -28,6 +27,9 @@ async function attachPendingWebSession(target) {
     return found;
   });
   if (!item) return false;
+  // 新收割的会话**无条件替换**旧会话（刷新语义）：旧守卫「已有会话就 return false」让
+  // 重新登录永远挂不上新 cookie（会话过期的账号走「浏览器登录」更新 = 死路——10R 卡上
+  // 「网页会话已失效」的账号因此无法在 CD 侧自愈）。与 cookie-site 捕获的原位更新对齐。
   target.meta = { ...(target.meta || {}), qoderWebSession: { cookie: item.cookie, capturedAt: item.capturedAt || new Date().toISOString() } };
   return true;
 }

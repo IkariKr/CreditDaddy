@@ -75,6 +75,20 @@ async function withToken(account, fn, ctx) {
     if (creds.expiresAt) account.expiresAt = creds.expiresAt;
     token = creds.token;
     refreshed = true;
+    if (account.id) {
+      try {
+        const { withAccounts } = await import('./store.js');
+        await withAccounts((list) => {
+          const cur = list.find((it) => it.id === account.id);
+          if (cur) {
+            cur.token = creds.token;
+            cur.refreshToken = creds.refreshToken;
+            if (creds.expiresAt) cur.expiresAt = creds.expiresAt;
+            cur.updatedAt = new Date().toISOString();
+          }
+        });
+      } catch {}
+    }
     await ctx?.onRefresh?.(creds);
   };
   let r = await fn(token);

@@ -540,12 +540,18 @@ function zcodePlanCompletion({ captchaCfg, jwt, rawBody, headers = {} }) {
 }
 
 /**
- * 隐私（无痕）登录窗口：每次用一个全新的内存态 session 分区（不带 persist: 前缀 = 不落盘），
- * 与系统浏览器及其它登录会话完全隔离；关闭时清空该 session 的存储。用于网页 OAuth / 选账号登录。
+ * 登录窗口。两种会话形态：
+ *  - 隐私（默认）：全新内存态 session 分区（不带 persist: 前缀 = 不落盘），与系统浏览器
+ *    及其它登录会话完全隔离；关闭时清空该 session 的存储 —— 每次捕获都要重新登录。
+ *  - 持久（persistKey = 'cookie-site-<id>'）：`persist:` 分区按站点落盘——**用户在本窗登录
+ *    一次后，下一轮重捕/重探直接复用活着的社会Cookie会话，免二次登录**（站点 SSO 场景
+ *    每登录一次都要过一遭谷歌验证码，这是最高频的痛点）。落盘位置与账号库同在用户数据目录
+ *    （本机自有凭据，同一份 0600 纪律），面板「清除已存会话」可随时抹掉。Qoder 专属线不用它。
  */
-async function openIncognitoWindow(url) {
-  const partition = 'incognito-' + crypto.randomUUID();
+async function openIncognitoWindow(url, { persistKey } = {}) {
+  const partition = persistKey ? 'persist:' + persistKey : 'incognito-' + crypto.randomUUID();
   const ses = session.fromPartition(partition);   // 无 persist: 前缀 → 内存态，进程退出即消失
+  const isPersist = Boolean(persistKey);
   // 国际版按 IP 识别地区（qoder.com）：配置了出口代理时登录窗显式走它；
   // 未配置则保持默认（Electron 窗口本来就跟随系统代理，不覆盖）
   if (/\/\/qoder\.com(\/|$)/.test(url)) {
@@ -588,6 +594,8 @@ async function openIncognitoWindow(url) {
   };
   authWin.setMenuBarVisibility(false);
   attachContainerCapture(authWin.webContents);
+  // river 等 WorkOS 站点：截获 authenticate 响应体里的 token（页面内存读不到）
+  attachAuthTokenSniffer(authWin.webContents, ses);
   attachShellContextMenu(authWin);
   // 同一次登录里网站自己弹的窗口（如第三方账号选择、二次验证）复用同一隐私 session
   authWin.webContents.setWindowOpenHandler(({ url: subUrl }) => {
@@ -613,7 +621,11 @@ async function openIncognitoWindow(url) {
     if (cookieSite) jobs.push(harvestCookieSiteSession(ses, cookieSite));
     Promise.allSettled(jobs)
       .catch(() => {})
-      .finally(() => { ses.clearStorageData().catch(() => {}); });
+      .finally(() => {
+        // 持久分区【不擦存储】——复用登录态正是它的存在意义；「清除已存会话」入口
+        // （clear-cookie-site-session）负责显式抹除。无痕分区照旧关窗即清。
+        if (!isPersist) ses.clearStorageData().catch(() => {});
+      });
   });
   authWin.loadURL(url);
   return authWin;
@@ -659,17 +671,114 @@ async function probeViaHiddenWindow(ses, site, timeoutMs = 20000) {
   finally { try { if (w && !w.isDestroyed()) w.destroy(); } catch { /* ignore */ } }
 }
 
+/** WorkOS 会话 token 截获（river）：SPA 把 token 只放内存 Map（Co），localStorage 不写、
+ *  cookie 里也只有标记/可能带 Path 域——页面脚本与 session API 都拿不到 token 本体。
+ *  唯一可靠出口是 `/user_management/authenticate` 的**响应体**（access + refresh 全在里面）：
+ *  给登录窗挂 CDP Network 监听，见响应即摘。摘到的 token 以 storage 同形键交给 daemon
+ *  （parseRiverSession 原样消费），通道顺序不变。 */
+function attachAuthTokenSniffer(wc, ses) {
+  try {
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  } catch { return; }
+  wc.debugger.on('message', (e, method, params) => {
+    if (method !== 'Network.responseReceived') return;
+    const url = String(params?.response?.url || '');
+    if (!url.includes('/user_management/authenticate')) return;
+    wc.debugger.sendCommand('Network.getResponseBody', { requestId: params.requestId }).then((r) => {
+      try {
+        const body = JSON.parse(r.body);
+        if (!body?.access_token) return;
+        ses._workosAuth = {
+          accessToken: body.access_token,
+          refreshToken: body.refresh_token || null,
+          user: body.user || null,
+          capturedAt: new Date().toISOString(),
+        };
+      } catch { /* 非 JSON 响应忽略 */ }
+    }).catch(() => { /* 响应体取不到不致命 */ });
+  });
+  try { wc.debugger.sendCommand('Network.enable'); } catch { /* ignore */ }
+}
+
+/** #23 增补：localStorage 凭据收割（river = WorkOS SPA 会话 token，cookie/HTML 探针拿不到）。
+ *  登录窗关闭后 webContents 已销毁，但同 session 的 localStorage 仍在——开同源隐藏窗读键值。
+ *  实测：console SPA 的 WorkOS token 只在内存 Map，localStorage 通常为空——storage 为空时
+ *  daemon 侧走 cookie 通道，这里的前缀扫描只是 dev 模式/旧 SDK 的兜底。 */
+async function harvestSiteStorage(ses, site) {
+  const hasKeys = Array.isArray(site.storageKeys) && site.storageKeys.length > 0;
+  const hasPrefixes = Array.isArray(site.storagePrefixes) && site.storagePrefixes.length > 0;
+  if (!hasKeys && !hasPrefixes) return {};
+  let w = null;
+  try {
+    w = new BrowserWindow({ show: false, width: 480, height: 640, webPreferences: { session: ses, sandbox: true } });
+    await w.webContents.loadURL(site.homeUrl);
+    await new Promise((r) => setTimeout(r, 800));   // SPA 启动缓冲（localStorage 可读性与渲染无关，等一拍更稳）
+    const js = `JSON.stringify((() => { try {
+      const out = {};
+      for (const k of ${JSON.stringify(site.storageKeys || [])}) out[k] = window.localStorage.getItem(k);
+      for (const p of ${JSON.stringify(site.storagePrefixes || [])}) {
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const k = window.localStorage.key(i);
+          if (k && k.startsWith(p)) out[k] = window.localStorage.getItem(k);
+        }
+      }
+      return out;
+    } catch { return {}; } })())`;
+    const raw = await w.webContents.executeJavaScript(js).catch(() => null);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+  finally { try { if (w && !w.isDestroyed()) w.destroy(); } catch { /* ignore */ } }
+}
+
 /** #23：通用 cookie 站点收割——隐私会话里的全量 cookie 串成 plain string,交给 daemon 探测入库 */
 async function harvestCookieSiteSession(ses, site) {
-  const cookies = await ses.cookies.get({ url: site.homeUrl }).catch(() => []);
-  const cookie = cookieSitesLib.serializeCookies(cookies);
+  // 全量 cookie（不过滤 URL）：带 Path 域的会话 cookie（如 /user_management 下的刷新 cookie）
+  // 按 URL 过滤会被丢掉——2026-10-14 实测 river 刷新兑换「Missing refresh token」的根因之一
+  const all = await ses.cookies.get({}).catch(() => []);
+  // 站点要求特定鉴权 cookie（如小浣熊 raccoon_token：SSO 回调后由 API 异步 set-cookie，
+  // 关窗早一拍它还没落地——收割就是空的，daemon 打过去必 401「会话失效」）：
+  // 轮询等它最多 8s（每 400ms 一查），等不到就按现状收割（daemon 侧会归为 401 + 日志点名）。
+  const authCookieName = String(site.authCookieName || '');
+  if (authCookieName && !all.some((c) => c.name === authCookieName)) {
+    const deadline = Date.now() + 8000;
+    let polled = all;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 400));
+      polled = await ses.cookies.get({}).catch(() => []);
+      if (polled.some((c) => c.name === authCookieName)) break;
+    }
+    if (polled.some((c) => c.name === authCookieName)) {
+      all.length = 0;
+      all.push(...polled);
+    } else {
+      notify(site.name, Tt('登录凭据（{name}）尚未由站点写回——捕获可能不完整，如卡片显示会话失效请稍后在站点内重新触发一次登录', { name: authCookieName }));
+    }
+  }
+  const cookie = cookieSitesLib.serializeCookies(all);
   const key = (daemonMod && typeof daemonMod.getSessionKey === 'function' && daemonMod.getSessionKey()) || (daemonMod && typeof daemonMod.getPanelKey === 'function' ? daemonMod.getPanelKey() : '');
+  // localStorage 凭据站点（river）：token 只活在页面上下文；HTML 探针跳过（余额 API 调用即探测）
+  const storageSite = Array.isArray(site.storageKeys) && site.storageKeys.length > 0;
+  const storage = storageSite ? await harvestSiteStorage(ses, site).catch(() => ({})) : {};
+  // CDP 截获的 WorkOS token（authenticate 响应体）以 storage 同形键并入，daemon 侧同一套解析
+  const ws = ses._workosAuth;
+  if (ws && ws.accessToken) {
+    storage['workos:access-token'] = ws.accessToken;
+    if (ws.refreshToken) storage['workos:refresh-token'] = ws.refreshToken;
+    if (ws.user) storage['workos:user'] = typeof ws.user === 'string' ? ws.user : JSON.stringify(ws.user);
+  }
+  const storageCount = Object.values(storage || {}).filter((v) => typeof v === 'string' && v.trim()).length;
   // 先拿浏览器视角 HTML(Node 探测会拿风控/空壳,造成「登录明明成功却报会话无效」)
-  const probeHtml = await probeViaHiddenWindow(ses, site).catch(() => null);
+  const probeHtml = storageSite ? null : await probeViaHiddenWindow(ses, site).catch(() => null);
   const r = await fetch('http://127.0.0.1:' + boundPort + '/api/cookie-sites/' + site.id + '/capture', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(key ? { 'x-qd-key': key } : {}) },
-    body: JSON.stringify({ cookie, diag: { cookieCount: (cookies || []).length }, probeHtml }),
+    body: JSON.stringify({
+      cookie,
+      storage,
+      // 名字 only（值不进日志）——刷新兑换失败时一眼看出会话 cookie 在不在
+      diag: { cookieCount: (all || []).length, storageCount, cookieNames: (all || []).map((c) => c.name) },
+      probeHtml,
+    }),
   }).catch(() => null);
   if (r && r.ok) {
     try { if (win && !win.isDestroyed()) win.webContents.send('cookie-site:captured', { site: site.id, name: site.name, ok: true }); } catch { /* ignore */ }
@@ -1227,12 +1336,32 @@ function registerAuthWindowIpc() {
   // 打开外部 URL（捐赠按钮用）
   ipcMain.handle('shell-open-external', (_, url) => { try { shell.openExternal(url); } catch {} });
   // 唤起小窗显示更新日志摘要（任何入口统一走 openChangelogBrief；IPC 只注册一次）
-  ipcMain.handle('open-changelog-brief', () => openChangelogBrief());  ipcMain.handle('open-auth-window', async (_e, url) => {
+  ipcMain.handle('open-changelog-brief', () => openChangelogBrief());  ipcMain.handle('open-auth-window', async (_e, url, opts) => {
     if (typeof url !== 'string' || !url.toLowerCase().startsWith('https://')) {
       return { ok: false, error: Tt('只允许打开 https 链接') };
     }
-    try { await openIncognitoWindow(url); return { ok: true }; }
+    // persistKey 只接受内部约定的命名（cookie-site-<站点id>），不透传任意值
+    const persistKey = opts && typeof opts.persistKey === 'string' && /^cookie-site-[a-z0-9-]+$/.test(opts.persistKey)
+      ? opts.persistKey : null;
+    try { await openIncognitoWindow(url, { persistKey }); return { ok: true }; }
     catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+  });
+  // 「清除已存会话」：抹掉某站点的持久登录分区存储（面板站点行入口；nodeIntegration 关闭，
+  // 主进程代为执行）。返回是否确实存在过该分区。
+  ipcMain.handle('clear-cookie-site-session', async (_e, persistKey) => {
+    if (typeof persistKey !== 'string' || !/^cookie-site-[a-z0-9-]+$/.test(persistKey)) {
+      return { ok: false, error: Tt('无效的会话标识') };
+    }
+    // 同名窗还开着时先关掉（否则清完它一份内存缓存又写回去）
+    for (const w of BrowserWindow.getAllWindows()) {
+      try {
+        if (!w.isDestroyed() && w.webContents.session === session.fromPartition('persist:' + persistKey)) w.close();
+      } catch { /* ignore */ }
+    }
+    try {
+      await session.fromPartition('persist:' + persistKey).clearStorageData();
+      return { ok: true };
+    } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
   });
   // ZCode 页「打开客户端」：优先本机安装路径，退到 zcode:// 协议
   ipcMain.handle('open-zcode-client', async () => {

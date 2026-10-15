@@ -186,3 +186,151 @@ test('daemon 捕获端点：探测通过入库去重；401 拒绝；/api/cookie-
     await fs.rm(home, { recursive: true, force: true });
   }
 });
+
+test('手改备注名不被捕获/重探的自动名覆盖（含历史无标记改名）', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'creditdaddy-csite-rename-'));
+  await fs.writeFile(path.join(home, 'settings.json'), JSON.stringify({ panelKey: '', panelKeyHash: '' }));
+  // 探针页带邮箱：重探时会想抽身份并自动命名——手改名必须挡住
+  const fake = http.createServer((req, res) => {
+    if (req.headers.cookie?.includes('alive=1')) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<html>yang@a.com <h1>Free allowance 20% used</h1></html>');
+    } else { res.writeHead(401); res.end('no'); }
+  });
+  await new Promise((r) => fake.listen(0, '127.0.0.1', r));
+  const probePort = fake.address().port;
+  const savedHome = process.env.CREDITDADDY_HOME;
+  const savedProbe = process.env.CD_PROBE_TOKENHARBOR;
+  process.env.CREDITDADDY_HOME = home;
+  process.env.CD_PROBE_TOKENHARBOR = `http://127.0.0.1:${probePort}/dashboard`;
+  let daemon;
+  try {
+    daemon = await import('../src/daemon.js');
+    const { server, port } = await daemon.startDaemon(0, '127.0.0.1');
+    try {
+      const call = (method, p, body) => new Promise((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port, path: p, method, headers: { 'Content-Type': 'application/json' } }, (res) => {
+          const chunks = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') }));
+        });
+        req.on('error', reject);
+        req.end(body ? JSON.stringify(body) : undefined);
+      });
+      const readAcc = async (id) => {
+        const accs = JSON.parse(await fs.readFile(path.join(home, 'accounts.json'), 'utf8'));
+        return accs.find((a) => a.id === id);
+      };
+
+      // 建行（自动名 Token Harbor 网页会话(yang@a.com)）
+      const cap = await call('POST', '/api/cookie-sites/tokenharbor/capture', {
+        cookie: 'alive=1', diag: { cookieCount: 1 },
+        probeHtml: '<html>yang@a.com <h1>Free allowance 20%</h1></html>',
+      });
+      assert.equal(cap.status, 200);
+      const accId = cap.body.accountId;
+
+      // ① 新改名（PATCH 打 renamed 标记）→ 重探 + 重捕不得覆盖
+      const patch = await call('PATCH', `/api/accounts/${accId}`, { name: 'TH 主号' });
+      assert.equal(patch.status, 200);
+      assert.equal((await readAcc(accId)).meta.renamed, true, 'PATCH 需留 renamed 标记');
+
+      const rp1 = await call('POST', '/api/cookie-sites/tokenharbor/reprobe', { accountId: accId });
+      assert.equal(rp1.status, 200);
+      assert.equal(rp1.body.results[0].ok, true);
+      assert.equal((await readAcc(accId)).name, 'TH 主号', '重探不得覆盖手改备注名');
+
+      await call('POST', '/api/cookie-sites/tokenharbor/capture', {
+        cookie: 'alive=1', diag: { cookieCount: 1 },
+        probeHtml: '<html>yang@a.com <h1>Free allowance 30%</h1></html>',
+      });
+      assert.equal((await readAcc(accId)).name, 'TH 主号', '重捕不得覆盖手改备注名');
+
+      // ② 历史改名（旧版无 renamed 标记）→ 同样不得覆盖
+      const accs = JSON.parse(await fs.readFile(path.join(home, 'accounts.json'), 'utf8'));
+      const row = accs.find((a) => a.id === accId);
+      row.name = '历史改名';
+      delete row.meta.renamed;
+      await fs.writeFile(path.join(home, 'accounts.json'), JSON.stringify(accs, null, 2));
+
+      const rp2 = await call('POST', '/api/cookie-sites/tokenharbor/reprobe', { accountId: accId });
+      assert.equal(rp2.status, 200);
+      assert.equal(rp2.body.results[0].ok, true);
+      assert.equal((await readAcc(accId)).name, '历史改名', '历史改名（无 renamed 标记）也不得被自动名覆盖');
+
+      // ③ 自动名仍可随身份升级：清空名后重探写回自动名
+      const accs2 = JSON.parse(await fs.readFile(path.join(home, 'accounts.json'), 'utf8'));
+      const row2 = accs2.find((a) => a.id === accId);
+      row2.name = null;
+      delete row2.meta.renamed;
+      await fs.writeFile(path.join(home, 'accounts.json'), JSON.stringify(accs2, null, 2));
+      const rp3 = await call('POST', '/api/cookie-sites/tokenharbor/reprobe', { accountId: accId });
+      assert.equal(rp3.body.results[0].ok, true);
+      assert.match((await readAcc(accId)).name || '', /yang@a\.com/, '空名行重探应回填自动名');
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  } finally {
+    process.env.CREDITDADDY_HOME = savedHome;
+    if (savedProbe === undefined) delete process.env.CD_PROBE_TOKENHARBOR;
+    else process.env.CD_PROBE_TOKENHARBOR = savedProbe;
+    fake.close();
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});
+
+test('网页会话账号「刷新积分」（/quota 端点）走重探语义：lastProbe 更新 + 余额回填（回归：原 productImpl undefined 崩 502、呼吸灯不动）', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'creditdaddy-quota-csite-'));
+  await fs.writeFile(path.join(home, 'settings.json'), JSON.stringify({ panelKey: '', panelKeyHash: '' }));
+  const fake = http.createServer((req, res) => {
+    if (req.headers.cookie?.includes('alive=1')) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<html>yang@a.com Free allowance 55% used</html>'); }
+    else { res.writeHead(401); res.end('no'); }
+  });
+  await new Promise((r) => fake.listen(0, '127.0.0.1', r));
+  const probePort = fake.address().port;
+  const savedHome = process.env.CREDITDADDY_HOME;
+  const savedProbe = process.env.CD_PROBE_TOKENHARBOR;
+  process.env.CREDITDADDY_HOME = home;
+  process.env.CD_PROBE_TOKENHARBOR = `http://127.0.0.1:${probePort}/dashboard`;
+  let daemon;
+  try {
+    daemon = await import('../src/daemon.js');
+    const { server, port } = await daemon.startDaemon(0, '127.0.0.1');
+    try {
+      const call = (method, p, body) => new Promise((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port, path: p, method, headers: { 'Content-Type': 'application/json' } }, (res) => {
+          const chunks = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') }));
+        });
+        req.on('error', reject);
+        req.end(body ? JSON.stringify(body) : undefined);
+      });
+
+      const cap = await call('POST', '/api/cookie-sites/tokenharbor/capture', {
+        cookie: 'alive=1', diag: { cookieCount: 1 },
+        probeHtml: '<html>yang@a.com Free allowance 55%</html>',
+      });
+      assert.equal(cap.status, 200);
+      const accId = cap.body.accountId;
+
+      // /quota 端点（产品页「刷新积分」按钮走的就是它）：必须成功并回填 lastProbe
+      const q = await call('GET', `/api/accounts/${accId}/quota`);
+      assert.equal(q.status, 200, `quota 端点应 200，实际 ${q.status} ${JSON.stringify(q.body)}`);
+      // tokenharbor = HTML 探针站：统一结构 total=100、remaining=100-used（55% 用了 → 45）
+      assert.ok(q.body.quota && Number(q.body.quota.remaining) === 45, 'quota 统一结构（HTML 站 remaining=100-used）');
+
+      const acc = JSON.parse(await fs.readFile(path.join(home, 'accounts.json'), 'utf8')).find((a) => a.id === accId);
+      assert.equal(acc.meta.lastProbe?.ok, true, 'lastProbe 必须更新（呼吸灯才会转绿）');
+      assert.equal(acc.meta.quotaSnapshot?.used, 55, '余额快照回填（HTML 站 = used 百分比）');
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  } finally {
+    process.env.CREDITDADDY_HOME = savedHome;
+    if (savedProbe === undefined) delete process.env.CD_PROBE_TOKENHARBOR;
+    else process.env.CD_PROBE_TOKENHARBOR = savedProbe;
+    fake.close();
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});

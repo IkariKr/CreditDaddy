@@ -18,7 +18,7 @@ import { fetchJsonRace } from './zcodeClient.js';
 export function dashboardHeaders(site) {
   return {
     Cookie: '',
-    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    Accept: site?.probe?.accept || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.5',
     Referer: (site.homeUrl || site.probe.url.split('/').slice(0, 3).join('/')) + '/',
     'Upgrade-Insecure-Requests': '1',
@@ -30,6 +30,34 @@ export function dashboardHeaders(site) {
 /** 登录页壳判定（会话已失效被挡回登录页）：没有配额标记且页面主题就是「登录」表单 */
 function looksLikeLoginPage(html) {
   return /sign\s?in|log\s?in/i.test(html);
+}
+
+/**
+ * Token Harbor dashboard HTML → 免费额度读数（与 10Router `services/usage/tokenharbor-free.js`
+ * 同款口径——两处解析同一页面，规则改动需同步）。捕获时从浏览器探针 HTML 里解析一次，
+ * 数字进 `meta.quotaSnapshot`，供 issue #24 的额度推送直接消费（推送不再打网络）。
+ * @returns {{ used: number, resetAt: string|null } | null} 解析不出配额返回 null
+ */
+export function parseTokenHarborQuota(html) {
+  const text = String(html || '');
+  let used = null;
+  const allowanceMatch = text.match(/Free allowance[\s\S]*?(\d+)%\s*(?:used|of total)/i);
+  if (allowanceMatch) used = parseInt(allowanceMatch[1], 10);
+  else {
+    const generalPercentMatch = text.match(/Free allowance[\s\S]*?(\d+)%/i);
+    if (generalPercentMatch) used = parseInt(generalPercentMatch[1], 10);
+  }
+  if (used === null) return null;
+  let resetAt = null;
+  const resetMatch = text.match(/Resets?\s+(?:in\s+)?(?:(\d+)\s*[dD])?\s*(?:(\d+)\s*[hH])?\s*(?:(\d+)\s*[mM])?/i);
+  if (resetMatch && (resetMatch[1] || resetMatch[2] || resetMatch[3])) {
+    const days = parseInt(resetMatch[1] || '0', 10);
+    const hours = parseInt(resetMatch[2] || '0', 10);
+    const minutes = parseInt(resetMatch[3] || '0', 10);
+    const msOffset = (days * 24 * 60 + hours * 60 + minutes) * 60 * 1000;
+    if (msOffset > 0) resetAt = new Date(Date.now() + msOffset).toISOString();
+  }
+  return { used, resetAt };
 }
 
 export const COOKIE_SITES = [
@@ -45,8 +73,92 @@ export const COOKIE_SITES = [
     // 抽不到 → 归到「未识别身份」单例,不影响既有行;有多账号需求的站点在配置里
     // 统一按这个抽,验证/合并逻辑对全表通用,不再一家一家硬编码。
     identity: { fromHtml: /[\w.+-]+@[\w-]+\.[\w.]+/ },
+    // issue #24：捕获时顺手解析网页读数，存 meta.quotaSnapshot 供额度推送消费
+    quota: { fromHtml: parseTokenHarborQuota },
     accountName: 'Token Harbor 网页会话',
     hint: '登录后 dashboard 才有 Free allowance 配额；凭据只存本机（账号库加密），同步到 10Router 时按 creditDaddyWebSession 形状传输。',
+  },
+  {
+    id: 'xiaomi-mimo',
+    name: 'Xiaomi MiMo',
+    provider: 'xiaomi-mimo',
+    label: '小米 MiMo 控制台余额（10Router 卡片）',
+    loginUrl: 'https://platform.xiaomimimo.com/console/balance',
+    homeUrl: 'https://platform.xiaomimimo.com',
+    probe: {
+      url: 'https://platform.xiaomimimo.com/api/v1/userProfile',
+      match: 'userId',
+      accept: 'application/json, text/plain, */*',
+    },
+    accountName: '小米 MiMo 控制台会话',
+    hint: '登录后自动抓取 UID 与控制台充值余额；通过外部配额（issue #24/26）推送到 10Router 配额追踪器显示余额卡片。',
+  },
+  {
+    id: 'modelscope',
+    name: 'ModelScope 魔搭',
+    provider: 'modelscope',
+    label: 'ModelScope 魔方余额（10Router 卡片）',
+    loginUrl: 'https://modelscope.cn',
+    homeUrl: 'https://modelscope.cn',
+    // 魔方余额 API 本身就是探测（GET /openapi/v1/magicubes/balance 带会话 cookie）；
+    // 每日魔方额度为登录自动发放（前端无 claim 端点），故无签到自动化，只读余额出卡。
+    cookieUrls: ['https://modelscope.cn', 'https://www.modelscope.cn'],
+    verify: 'api',
+    accountName: 'ModelScope 网页会话',
+    identity: { fromHtml: /[\w.+-]+@[\w-]+\.[\w.]+/ },
+    hint: '登录魔搭后自动抓取魔方（Magicube）余额；每日额度自动发放无需签到，token 只存本机，余额数字推 10Router 出卡（同名认领可挂连接卡）。',
+  },
+  {
+    id: 'river',
+    name: 'River AI',
+    provider: 'river',
+    label: 'River AI 免费额度（10Router 卡片）',
+    loginUrl: 'https://console.river.ai',
+    homeUrl: 'https://console.river.ai',
+    // 凭据主体是 WorkOS 会话——实测（2026-10-14）SPA 的 token 只在内存 Map，localStorage
+    // 通常为空；持久会话走 cookie（WORKOS_REFRESH_SESSION @ auth.console.river.ai 等）。
+    // 收割面必须覆盖**三个源**（console / auth / login 子域），storage 键做前缀扫描兜底。
+    // 探测/身份/额度由 daemon 的 river 线一步完成（cookie 直连 → Bearer → 刷新兑换），不走 HTML 探针。
+    storageKeys: ['workos:access-token', 'workos:refresh-token', 'workos:expires-at', 'workos:user'],
+    storagePrefixes: ['workos:'],
+    cookieUrls: ['https://console.river.ai', 'https://auth.console.river.ai', 'https://login.console.river.ai'],
+    verify: 'api',
+    accountName: 'River AI 网页会话',
+    hint: '登录 console.river.ai 后自动抓取 WorkOS 会话与 Billing 余额（$25 免费额度）；token 只存本机，推送 10Router 只带余额数字，会话过期自动刷新（单次轮换即时落盘）。',
+  },
+  {
+    id: 'xiaohuanxiong',
+    name: '办公小浣熊',
+    provider: 'xiaohuanxiong',
+    label: '办公小浣熊积分余额（10Router 卡片）',
+    loginUrl: 'https://office.xiaohuanxiong.com/home',
+    homeUrl: 'https://office.xiaohuanxiong.com',
+    // ⚠ API 在裸域 xiaohuanxiong.com（office 子域只负责页面，拼错 307 跳登录像会话失效）；
+    // token cookie 挂 .xiaohuanxiong.com 父域——cookieUrls 必须两个源都覆盖（issue #27 考古）。
+    cookieUrls: ['https://office.xiaohuanxiong.com', 'https://xiaohuanxiong.com'],
+    // 余额 API 即探测：带对 cookie 返 200 JSON，错/缺返 401 code 200001
+    verify: 'api',
+    // 鉴权主 cookie：SSO 回调后由 API 异步写回，收割时若还没落地则桌面壳轮询等它（8s 上限）
+    authCookieName: 'raccoon_token',
+    accountName: '办公小浣熊网页会话',
+    hint: '登录 office.xiaohuanxiong.com 后自动抓取积分余额与四桶构成（每日/每月/奖励/加油包）；每天 00:00 自动发放、无签到动作，推送 10Router 只带积分数字，token 只存本机。',
+  },
+  {
+    id: 'longcat',
+    name: 'LongCat',
+    provider: 'longcat',
+    label: 'LongCat Token 资源包（10Router 卡片）',
+    loginUrl: 'https://longcat.chat/pc/login',
+    homeUrl: 'https://longcat.chat',
+    // 资源包汇总 API 即探测：带对 cookie 返 200 {code:0}，未登录 401「用户未登录」（2026-10-15 实测）
+    probe: {
+      url: 'https://longcat.chat/api/pay/quota/metering/token-packs/summary',
+      match: '"code"',
+      accept: 'application/json, text/plain, */*',
+    },
+    verify: 'api',
+    accountName: 'LongCat 网页会话',
+    hint: '登录 longcat.chat 后自动抓取 Token 资源包余量与逐包明细（当前包 + 其他包，按官方消耗顺序排列）；推送 10Router 只带 token 数字，会话 cookie 只存本机。',
   },
 ];
 
@@ -75,7 +187,7 @@ function probeUrl(site) {
 /**
  * 探测一份会话 cookie 是否仍然有效。
  * 探测走 fetchJsonRace（跟随全局代理配置——Token Harbor 对大陆/港澳有封锁，出口代理是必须项）。
- * @returns {Promise<{ok: boolean, reason?: 'invalid'|'no-match'|'http'|'network', status?: number}>}
+ * @returns {Promise<{ok: boolean, reason?: 'invalid'|'no-match'|'http'|'network', status?: number, html?: string}>}
  */
 export async function verifySiteCookie(site, cookie, { fetchImpl } = {}) {
   const url = probeUrl(site);
@@ -90,7 +202,7 @@ export async function verifySiteCookie(site, cookie, { fetchImpl } = {}) {
       // 被挡回登录页 = 会话失效（与 10Router 的 AUTH_EXPIRED 分类对齐），不是「页面结构变化」
       return { ok: false, reason: looksLikeLoginPage(text) ? 'invalid' : 'no-match', status: r.status };
     }
-    return { ok: true, status: r.status };
+    return { ok: true, status: r.status, html: text };
   } catch (e) {
     return { ok: false, reason: 'network', error: e?.message || String(e) };
   }
@@ -116,6 +228,12 @@ export function extractIdentity(site, html) {
   return m && m[0] ? m[0] : null;
 }
 
+/** 从浏览器探针 HTML 里抽额度读数(site.quota.fromHtml);解析不出返 null,不影响既有行。 */
+export function extractQuotaSnapshot(site, html) {
+  if (!site.quota || typeof site.quota.fromHtml !== 'function') return null;
+  try { return site.quota.fromHtml(html) || null; } catch { return null; }
+}
+
 /** 归户键的短哈希(不暴露身份原文;merge/dedupe 都只比对它) */
 export function identityHashOf(value) {
   if (!value) return null;
@@ -123,4 +241,22 @@ export function identityHashOf(value) {
   const s = String(value);
   for (let i = 0; i < s.length; i++) h = ((h * 31 + s.charCodeAt(i)) | 0) >>> 0;
   return 'ih' + h.toString(36);
+}
+
+/**
+ * 行名是否属于「自动名家族」（站点默认名[+身份后缀] / Xiaomi MiMo (UID: …) / River AI (…) / ModelScope (…)）。
+ * 自动名可以随身份解析升级（如「ModelScope (会话)」→「ModelScope (x@y.com)」）；
+ * 不在家族里的名字视为**用户手改的备注名**（10R 同名认领键），一律不动——
+ * 这层判定独立于 meta.renamed 标记，把历史改名（旧版无标记）也保护进来。
+ */
+export function isAutoGeneratedName(site, name) {
+  const n = String(name || '');
+  if (!n) return true;   // 无名 → 允许回填自动名
+  const acc = String(site?.accountName || '');
+  const escaped = acc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return (acc && new RegExp(`^${escaped}(\\(.+\\))?$`).test(n))
+    || /^Xiaomi MiMo \(UID: .+\)$/.test(n)
+    || /^River AI \(.+\)$/.test(n)
+    || /^ModelScope \(.+\)$/.test(n)
+    || /^办公小浣熊( \(.+\))?$/.test(n);
 }

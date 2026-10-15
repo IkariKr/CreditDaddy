@@ -8,8 +8,15 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('creditdaddy', {
-  /** @param {string} url 必须是 https:// 开头 @returns {Promise<{ok: boolean, error?: string}>} */
-  openAuthWindow: (url) => ipcRenderer.invoke('open-auth-window', String(url || '')),
+  /**
+   * @param {string} url 必须是 https:// 开头
+   * @param {{persistKey?: string}} [opts] persistKey='cookie-site-<id>' → 持久登录分区
+   *   （本窗登录一次，下一轮捕获/重探复用会话免二次登录）；缺省 = 一次性隐私窗。
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  openAuthWindow: (url, opts) => ipcRenderer.invoke('open-auth-window', String(url || ''), opts),
+  /** 抹掉某站点持久登录分区的存储（「清除已存会话」）@returns {Promise<{ok: boolean, error?: string}>} */
+  clearCookieSiteSession: (persistKey) => ipcRenderer.invoke('clear-cookie-site-session', String(persistKey || '')),
   /** 打开本机 ZCode 客户端 @returns {Promise<{ok: boolean, error?: string}>} */
   openZcodeClient: () => ipcRenderer.invoke('open-zcode-client'),
   /** 打开本机 mirasim 客户端 @returns {Promise<{ok: boolean, error?: string}>} */

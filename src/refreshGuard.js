@@ -28,6 +28,12 @@ export function refreshFpDead(account) {
   return typeof fp === 'string' && fp.length > 0 && deadFp.get(keyOf(account)) === fp;
 }
 
+/** 清除失效记录（重开网关、重新授权或用户手动刷新时放行） */
+export function clearRefreshDead(account) {
+  if (account) deadFp.delete(keyOf(account));
+  else deadFp.clear();
+}
+
 /** 测试专用：清空进程内守卫状态 */
 export function __resetRefreshGuardForTests() {
   inFlight.clear();

@@ -48,11 +48,21 @@ test('tc 信封：magic 不符 / 完整性被破坏 / 非 base64 都返回 null 
 
 test('traeDevice：x-device-id 必须是纯数字（GUID 会触发风控 code 9074），且按 uid 稳定', () => {
   const a = traeDevice('7000000000000001', '9001000000000001');
-  assert.equal(a.deviceId, '9001000000000001', 'storage.json 里客户端自报的设备号优先');
   assert.match(a.deviceId, /^\d{8,}$/);
   assert.match(a.marketUserId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.equal(a.sessionId, traeDevice('7000000000000001', '9001000000000001').sessionId, '同一 uid 指纹恒定');
   assert.notEqual(a.sessionId, traeDevice('9999999999999999', '9001000000000001').sessionId, '不同 uid 指纹不同');
+});
+
+test('traeDevice：多账号每号独立设备码（issue #28）——客户端自报值不再共用', () => {
+  // 本机导入的 N 个账号 meta.deviceId 全同（同一台物理客户端）：
+  // 若沿用 stored 值，服务端按设备限每日一领，第二个账号起必吃 9074
+  const stored = '9001000000000001';   // 同一台客户端自报的设备号
+  const ids = ['7000000000000001', '7000000000000002', '7000000000000003'].map((uid) => traeDevice(uid, stored).deviceId);
+  assert.equal(new Set(ids).size, ids.length, '不同 uid 必须派生出不同 device-id');
+  for (const id of ids) assert.match(id, /^\d{8,}$/);
+  // 稳定性：同一 uid 反复取值恒定（服务端看到的是「每号一台固定设备」）
+  assert.equal(traeDevice('7000000000000001', stored).deviceId, ids[0]);
 });
 
 test('traeDevice：本机没有数字设备号时回落 uid 派生值，仍为纯数字', () => {

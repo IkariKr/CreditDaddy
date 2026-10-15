@@ -261,6 +261,47 @@ test('setGatewayEnabled(true) → 清空黑名单与冷却', async () => {
   assert.equal(res.status, 200, res.body);
 });
 
+test('402 余额不足 → 归类额度耗尽并冷却 30 分钟，下一请求不再打上游', async () => {
+  await resetState();
+  await seedAccount('a1', { name: '一号' });
+  await seedAccount('a2', { name: '二号' });
+  const msg402 = () => ({ status: 402, body: '{"type":"error","error":{"type":"insufficient_balance_error","message":"insufficient balance (1008)"}}' });
+  upstreamQueue.push(msg402(), msg402());
+
+  const res = captureRes();
+  await gw.handleGateway(fakeReq('POST', '{}'), res);
+  assert.equal(res.status, 502, res.body);
+  assert.match(res.body, /额度耗尽/, 'attempts 摘要应写明额度耗尽而非泛化的上游错误');
+  assert.equal(completions().length, 2, '两个账号各试一次');
+
+  // 冷却期内：队列里没有可用账号 → 503，且不再产生新的上游调用
+  const before = completions().length;
+  const res2 = captureRes();
+  await gw.handleGateway(fakeReq('POST', '{}'), res2);
+  assert.equal(res2.status, 503, res2.body);
+  assert.match(res2.body, /2 个临时冷却中/);
+  assert.equal(completions().length, before, '冷却期间不应再打上游');
+
+  // 冷却时长口径：约 30 分钟（远长于 429 的 5 分钟）
+  const st = await gw.gatewayStatus();
+  assert.deepEqual(st.cooling.sort(), ['一号', '二号']);
+});
+
+test('402 只冷却命中账号，健康账号继续承接', async () => {
+  await resetState();
+  await seedAccount('a1', { name: '空号' });
+  await seedAccount('a2', { name: '有号' });
+  upstreamQueue.push(
+    { status: 402, body: '{"error":{"type":"insufficient_balance_error"}}' },
+    msgOk(),
+  );
+  const res = captureRes();
+  await gw.handleGateway(fakeReq('POST', '{}'), res);
+  assert.equal(res.status, 200, res.body);
+  const st = await gw.gatewayStatus();
+  assert.deepEqual(st.cooling, ['空号'], '只有 402 的账号进冷却');
+});
+
 test('网关未开启时 503 提示开启', async () => {
   await resetState({ settings: { minimaxGateway: false } });
   await seedAccount('a1');

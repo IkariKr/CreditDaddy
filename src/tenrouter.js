@@ -21,7 +21,15 @@ const QUOTA_TIMEOUT_MS = 90_000;   // 10Router 端并发查询全部供应商，
 const IMPORT_TIMEOUT_MS = 120_000;
 const BATCH = 5000;
 const SYNC_INTERVAL_MS = 60 * 60 * 1000;
-const DEFAULT_CONFIG = { endpoint: '', key: '', adminPassword: '', sync: { enabled: false, sources: [...SOURCES], sourcesVersion: 2 }, syncState: {}, lastSync: null };
+const DEFAULT_CONFIG = {
+  endpoint: '',
+  key: '',
+  adminPassword: '',
+  sync: { enabled: false, sources: [...SOURCES], sourcesVersion: 2 },
+  syncState: {},
+  lastSync: null,
+  quotaPush: { enabled: true, intervalMin: 60, lastPush: null },
+};
 // v1.0.0 及更早保存的来源全集；版本迁移只补「此后新增」的来源，不复活用户手动关掉的
 const LEGACY_SOURCES = ['zcode', 'opencode', 'mirasim', 'mimo', 'catpaw'];
 const SOURCES_VERSION = 3;   // 3: 新增 10Router 本机实例来源（10r）
@@ -30,6 +38,7 @@ export function loadConfig() {
   try {
     const c = JSON.parse(fs.readFileSync(FILE(), 'utf8'));
     const sync = { ...DEFAULT_CONFIG.sync, ...(c.sync || {}) };
+    const quotaPush = { ...DEFAULT_CONFIG.quotaPush, ...(c.quotaPush || {}) };
     // 旧配置里的 sources 是保存时的快照，会盖掉新增来源（妙手因此被静默关掉）；
     // 只把此后新增的来源默认并入，用户手动关掉的保持关闭。
     const savedVersion = Number(c.sync?.sourcesVersion) || 1;
@@ -38,7 +47,7 @@ export function loadConfig() {
       for (const s of SOURCES) if (!LEGACY_SOURCES.includes(s) && !sync.sources.includes(s)) sync.sources.push(s);
       sync.sourcesVersion = SOURCES_VERSION;
     }
-    return { ...DEFAULT_CONFIG, ...c, sync, syncState: c.syncState || {} };
+    return { ...DEFAULT_CONFIG, ...c, sync, quotaPush, syncState: c.syncState || {} };
   } catch { return structuredClone(DEFAULT_CONFIG); }
 }
 
@@ -87,6 +96,7 @@ export async function publicConfig() {
     keyMasked: maskKey(c.key),
     hasAdminPassword: Boolean(c.adminPassword),
     sync: c.sync,
+    quotaPush: c.quotaPush,
     lastSync: c.lastSync,
     syncing: Boolean(syncing),
     sources: await detectSources(),
@@ -94,7 +104,7 @@ export async function publicConfig() {
 }
 
 /** 更新配置：key 留空表示保持原值；endpoint 为空 = 清除整个配置 */
-export function updateConfig({ endpoint, key, adminPassword, syncEnabled, sources } = {}) {
+export function updateConfig({ endpoint, key, adminPassword, syncEnabled, sources, quotaPushEnabled, quotaPushIntervalMin } = {}) {
   return withConfig((c) => {
     if (endpoint !== undefined) {
       c.endpoint = normalizeEndpoint(endpoint);
@@ -110,6 +120,12 @@ export function updateConfig({ endpoint, key, adminPassword, syncEnabled, source
     if (Array.isArray(sources)) {
       c.sync.sources = sources.filter((s) => SOURCES.includes(s));
       c.sync.sourcesVersion = SOURCES_VERSION;   // 显式保存过勾选结果，之后不再自动并入新来源
+    }
+    c.quotaPush = { ...DEFAULT_CONFIG.quotaPush, ...(c.quotaPush || {}) };
+    if (typeof quotaPushEnabled === 'boolean') c.quotaPush.enabled = quotaPushEnabled;
+    if (quotaPushIntervalMin !== undefined) {
+      const min = Math.max(15, Math.min(1440, Number(quotaPushIntervalMin) || 60));
+      c.quotaPush.intervalMin = min;
     }
   });
 }
@@ -264,15 +280,53 @@ async function doSync({ dryRun, trigger }) {
   return { summary, results };
 }
 
-/** 后台每小时同步一次（仅在配置了且开启自动同步时） */
+/**
+ * 额度卡推送（issue #24）：把 CD 解析好的额度数字 POST 到 10Router 通用接口。
+ * 独立于用量同步开关——受 c.quotaPush.enabled 控制（默认开启），只要配了地址与 key 且开关开启即可推送。
+ * @param {{onlySources?: string[]}} opts  onlySources=只推这些 source（就地重探只刷涉及的那几路）
+ * fail-soft：任何一路失败只记日志。
+ */
+export async function pushQuotaCards({ onlySources } = {}) {
+  const c = loadConfig();
+  if (!c.endpoint || !c.key) return { results: [], skipped: 'not-configured' };
+  if (c.quotaPush?.enabled === false) return { results: [], skipped: 'disabled' };
+  const { runQuotaPush } = await import('./externalQuota.js');
+  const { loadAccounts } = await import('./store.js');
+  const accounts = await loadAccounts();
+  const res = await runQuotaPush({
+    endpoint: c.endpoint, key: c.key, accounts,
+    ...(Array.isArray(onlySources) && onlySources.length ? { onlySource: onlySources } : {}),
+  });
+  await withConfig((cc) => {
+    cc.quotaPush = { ...(cc.quotaPush || {}), lastPush: new Date().toISOString() };
+  });
+  return res;
+}
+
+const SCHEDULER_CHECK_MS = 60 * 1000;   // 每分钟轮询一次定时条件
+
+/** 后台调度器：按配置频率自动同步用量与推送额度卡 */
 export function startUsageSyncScheduler() {
   if (timer) return;
+  let lastSyncAt = 0;
+  let lastPushAt = 0;
   const tick = () => {
     const c = loadConfig();
-    if (!isConfigured(c) || !c.sync.enabled) return;
-        runUsageSync({ trigger: 'auto' }).catch((e) => logger.warn('10R', '自动同步失败:{err}', { err: e.message }));
+    if (!isConfigured(c)) return;
+    const now = Date.now();
+    // 1) 用量同步：每 1 小时一轮（需开启自动开关）
+    if (c.sync.enabled && now - lastSyncAt >= SYNC_INTERVAL_MS) {
+      lastSyncAt = now;
+      runUsageSync({ trigger: 'auto' }).catch((e) => logger.warn('10R', '自动同步失败:{err}', { err: e.message }));
+    }
+    // 2) 额度卡推送：按配置频率（默认 60 分钟，需开启开关）
+    const pushIntervalMs = Math.max(15, Number(c.quotaPush?.intervalMin) || 60) * 60 * 1000;
+    if (c.quotaPush?.enabled !== false && now - lastPushAt >= pushIntervalMs) {
+      lastPushAt = now;
+      pushQuotaCards().catch((e) => logger.warn('10R', '额度卡推送失败:{err}', { err: e.message }));
+    }
   };
-  setTimeout(tick, 60_000).unref?.();   // 启动 1 分钟后先跑一轮
-  timer = setInterval(tick, SYNC_INTERVAL_MS);
+  setTimeout(tick, 30_000).unref?.();   // 启动 30 秒后先跑一轮首检
+  timer = setInterval(tick, SCHEDULER_CHECK_MS);
   timer.unref?.();
 }

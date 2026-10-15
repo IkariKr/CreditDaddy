@@ -35,7 +35,7 @@ export const WEB_USAGE_PATH = '/api/v2/me/usages/big_model_credits';
 export const JOB_TOKEN_EXCHANGE_PATH = '/api/v1/jobToken/exchange';
 
 // 账号的 provider = 产品 + 区域。新增产品时在此登记，并在 providers.js 挂上对应实现。
-export const PROVIDERS = ['qoder', 'qoder-cn', 'workbuddy', 'workbuddy-intl', 'zcode', 'mirasim', 'catpaw', 'trae', 'minimax', 'tokenharbor'];
+export const PROVIDERS = ['qoder', 'qoder-cn', 'workbuddy', 'workbuddy-intl', 'zcode', 'mirasim', 'catpaw', 'trae', 'minimax', 'tokenharbor', 'xiaomi-mimo', 'river', 'modelscope', 'xiaohuanxiong', 'longcat'];
 export const PROVIDER_LABEL = {
   qoder: 'Qoder 国际版',
   'qoder-cn': 'Qoder 国内版',
@@ -47,8 +47,13 @@ export const PROVIDER_LABEL = {
   trae: 'Trae',
   minimax: 'MiniMax',
   tokenharbor: 'Token Harbor',
+  'xiaomi-mimo': '小米 MiMo',
+  river: 'River AI',
+  modelscope: 'ModelScope 魔搭',
+  xiaohuanxiong: '办公小浣熊',
+  longcat: 'LongCat',
 };
-/** provider → 产品线（qoder / workbuddy / zcode / mirasim / catpaw / trae / minimax） */
+/** provider → 产品线（qoder / workbuddy / zcode / mirasim / catpaw / trae / minimax / tokenharbor / xiaomi-mimo / river） */
 export const productOf = (provider) => {
   const p = String(provider);
   if (p.startsWith('workbuddy')) return 'workbuddy';
@@ -58,6 +63,11 @@ export const productOf = (provider) => {
   if (p.startsWith('trae')) return 'trae';
   if (p === 'minimax') return 'minimax';
   if (p === 'tokenharbor') return 'tokenharbor';
+  if (p === 'xiaomi-mimo') return 'xiaomi-mimo';
+  if (p === 'river') return 'river';
+  if (p === 'modelscope') return 'modelscope';
+  if (p === 'xiaohuanxiong') return 'xiaohuanxiong';
+  if (p === 'longcat') return 'longcat';
   return 'qoder';
 };
 /** provider 是否国内版 */

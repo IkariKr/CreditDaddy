@@ -14,7 +14,8 @@
 
 import { fetchJsonRace } from './zcodeClient.js';
 import { loadAccounts, loadSettings, saveSettings } from './store.js';
-import { refreshMiniMaxToken, fetchMiniMaxQuota, MINIMAX_MESSAGES_URL } from './minimaxClient.js';
+import { refreshMiniMaxToken, refreshAccountToken, fetchMiniMaxQuota, MINIMAX_MESSAGES_URL } from './minimaxClient.js';
+import { clearRefreshDead, __resetRefreshGuardForTests } from './refreshGuard.js';
 import { refreshContext } from './accounts.js';
 import { gatewayHostSuggestion } from './tenrouter.js';
 import { logger, summarizeAttempts } from './logger.js';
@@ -39,6 +40,7 @@ export async function setGatewayEnabled(v) {
   if (on) {
     dead.clear();
     cooling.clear();
+    clearRefreshDead();
   }
 }
 
@@ -98,6 +100,7 @@ export function __resetForTests() {
   stats.lastCallAt = null;
   stats.calls = 0;
   stats.lastAccount = null;
+  __resetRefreshGuardForTests();
 }
 
 /** 账号权重:剩余积分(带 TTL 的快照,避免每个请求都打额度接口)。查询失败时保留上次快照权重。 */
@@ -296,32 +299,14 @@ export async function handleGateway(req, res) {
 
     try {
       upstream = await sendUpstream(activeToken);
-      // 如果 401 且账号有 refreshToken，尝试就地刷新一次并重试
+      // 如果 401 且账号有 refreshToken，尝试就地刷新一次并重试（走与 checkin/quota 统一的 refreshAccountToken，自带互斥防竞态与自动落盘）
       if (upstream.status === 401 && account.refreshToken) {
         logger.info('MINIMAX-GW', '{label} 收到 401,尝试刷新凭据...', { label });
         try {
-          // 本机导入账号：刷新前对齐 ~/.minimax auth.json 里客户端最新的 refreshToken，避免 invalid_grant
-          try {
-            const { alignMiniMaxFromLocal } = await import('./minimaxLocal.js');
-            if (alignMiniMaxFromLocal(account, (m) => logger.info('MINIMAX-GW', '{label} {msg}', { label, msg: m }))) {
-              activeToken = account.token;
-            }
-          } catch {}
-          const refreshed = await refreshMiniMaxToken(account.refreshToken);
-          const expiresAt = new Date(Date.now() + refreshed.expiresIn * 1000).toISOString();
-          account.token = refreshed.accessToken;
-          account.refreshToken = refreshed.refreshToken;
-          account.expiresAt = expiresAt;
-          const { withAccounts } = await import('./store.js');
-          await withAccounts((list) => {
-            const cur = list.find((a) => a.id === account.id);
-            if (cur) {
-              cur.token = refreshed.accessToken;
-              cur.refreshToken = refreshed.refreshToken;
-              cur.expiresAt = expiresAt;
-            }
+          const creds = await refreshAccountToken(account, {
+            log: (m) => logger.info('MINIMAX-GW', '{label} {msg}', { label, msg: m }),
           });
-          activeToken = refreshed.accessToken;
+          activeToken = creds.token;
           // 刷新回写即凭据更新：解除该账号可能存在的拉黑/冷却（指纹已变化，防御性直清）
           dead.delete(account.id);
           cooling.delete(account.id);
@@ -381,6 +366,12 @@ export async function handleGateway(req, res) {
       markDead(account);
       attempted.push({ account: label, ok: false, error: 'Token 彻底失效 (401)，拉黑' });
       logger.info('MINIMAX-GW', '{label} 凭据失效,拉黑', { label });
+      continue;
+    }
+    if (upstream.status === 402 || /insufficient_balance|余额不足|额度不足/i.test(errText)) {
+      markCooling(account.id, 30 * 60_000);
+      attempted.push({ account: label, ok: false, error: '额度耗尽 (402)，冷却 30 分钟' });
+      logger.warn('MINIMAX-GW', '{label} 额度耗尽 (402),冷却 30 分钟', { label });
       continue;
     }
     if (upstream.status === 429) {

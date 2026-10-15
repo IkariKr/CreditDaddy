@@ -107,8 +107,9 @@ export async function withMiniMaxAuth(account, fn, ctx = {}) {
 /**
  * 并发互斥 + 失效链熔断已提升到 src/refreshGuard.js —— workbuddy / mirasim 复用同一守卫。
  * MiniMax 特有的点：刷新前先 alignMiniMaxFromLocal 对齐本机客户端最新链（客户端会轮换）。
+ * 刷新成功后内置自动原子持久化到账号库（防单次轮换的 refreshToken 因调用方未传 onRefresh 而丢失在内存）。
  */
-function refreshAccountToken(account, ctx = {}) {
+export function refreshAccountToken(account, ctx = {}) {
   return withRefreshDedupe(account, async (a) => {
     try {
       const { alignMiniMaxFromLocal } = await import('./minimaxLocal.js');
@@ -126,6 +127,29 @@ function refreshAccountToken(account, ctx = {}) {
       a.token = creds.token;
       a.refreshToken = creds.refreshToken;
       a.expiresAt = expiresAt;
+
+      // 关键防护：只要账号有 id，无条件立即持久化回写账号库！
+      // MiniMax 采用严格单次轮换（Single-Use Refresh Token Rotation）：旧 refreshToken
+      // 只要刷新成功就在服务端当场作废。如果依赖外界传 onRefresh，任何未传上下文的调用
+      // （如后台额度卡推送、轻量查询等）都会让新 token 丢在内存，下次读盘只能读到作废的旧链，
+      // 导致用户「1天内必报 invalid_grant 凭据作废」。
+      if (a.id) {
+        try {
+          const { withAccounts } = await import('./store.js');
+          await withAccounts((list) => {
+            const cur = list.find((it) => it.id === a.id);
+            if (cur) {
+              cur.token = creds.token;
+              cur.refreshToken = creds.refreshToken;
+              cur.expiresAt = expiresAt;
+              cur.updatedAt = new Date().toISOString();
+            }
+          });
+        } catch (saveErr) {
+          ctx.log?.(`MiniMax 刷新凭据落盘失败: ${saveErr.message}`);
+        }
+      }
+
       await ctx.onRefresh?.(creds);
       return creds;
     } catch (refErr) {

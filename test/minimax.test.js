@@ -297,6 +297,45 @@ test('writeMiniMaxAuth: device 账号（无 authRecordKey）不回写本机 auth
   assert.equal(after.records['rec-x'].generation, 5);
 });
 
+test('refreshAccountToken: 即使调用方未传 onRefresh，也必须内置持久化回写 accounts.json', async () => {
+  const acc = {
+    id: 'mm-persist-test',
+    name: '落盘测试号',
+    provider: 'minimax',
+    token: 'tok-old',
+    refreshToken: 'rt-old',
+  };
+  await store.saveAccounts([acc]);
+
+  const restore = stubFetch(async (url) => {
+    if (String(url).includes('/oauth2/token')) {
+      return jsonResponse(200, {
+        access_token: 'tok-refreshed-123',
+        refresh_token: 'rt-refreshed-456',
+        expires_in: 3600,
+      });
+    }
+    return jsonResponse(404, {});
+  });
+
+  try {
+    // 故意不传 ctx / onRefresh，模拟 tenrouter.pushQuotaCards 或轻量调用的漏传场景
+    const creds = await client.refreshAccountToken(acc);
+    assert.equal(creds.token, 'tok-refreshed-123');
+    assert.equal(creds.refreshToken, 'rt-refreshed-456');
+
+    // 核心断言：磁盘 accounts.json 必须已被自动原子更新
+    const disk = (await store.loadAccounts()).find((a) => a.id === 'mm-persist-test');
+    assert.ok(disk, '账号应存在于磁盘');
+    assert.equal(disk.token, 'tok-refreshed-123', '新 token 必须已落盘');
+    assert.equal(disk.refreshToken, 'rt-refreshed-456', '单次轮换的 new refreshToken 必须已落盘');
+    assert.ok(disk.expiresAt, 'expiresAt 必须已落盘');
+  } finally {
+    restore();
+  }
+});
+
+
 test('writeMiniMaxAuth: 本机导入账号（客户端未运行）回写并 generation+1', () => {
   writeAuthJson({ 'rec-y': { accessToken: 'at_old', refreshToken: 'rt_old', expiresAtMs: Date.now(), generation: 7 } });
   const synced = local.writeMiniMaxAuth({

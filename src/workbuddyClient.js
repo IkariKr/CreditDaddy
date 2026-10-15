@@ -213,6 +213,20 @@ async function withToken(account, fn, onRefresh) {
     Object.assign(account, { token: creds.token, refreshToken: creds.refreshToken, expiresAt: creds.expiresAt });
     token = creds.token;
     refreshed = true;
+    if (account.id) {
+      try {
+        const { withAccounts } = await import('./store.js');
+        await withAccounts((list) => {
+          const cur = list.find((it) => it.id === account.id);
+          if (cur) {
+            cur.token = creds.token;
+            cur.refreshToken = creds.refreshToken;
+            cur.expiresAt = creds.expiresAt;
+            cur.updatedAt = new Date().toISOString();
+          }
+        });
+      } catch {}
+    }
     await onRefresh?.(creds);
   };
   if (isExpired(account) && account.refreshToken) await doRefresh();

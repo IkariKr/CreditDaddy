@@ -101,6 +101,10 @@
   .dot.on { background: var(--ok); opacity: 1; box-shadow: 0 0 5px var(--ok); }
   .dot.pulse { animation: dot-pulse 2.2s ease-out infinite; }
   @keyframes dot-pulse { 0% { box-shadow: 0 0 0 0 rgba(46, 229, 157, .45); } 70% { box-shadow: 0 0 0 5px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  /* 网页会话账号行探活灯：绿=上次重探通过；黄=探测失败（网络/结构变化，旧数字仍挂着）；
+     红=会话失效（401/403，需要重新登录捕获） */
+  .dot.probe-warn { background: var(--warn, #f59e0b); opacity: 1; box-shadow: 0 0 5px var(--warn, #f59e0b); }
+  .dot.probe-dead { background: #f56d7d; opacity: 1; box-shadow: 0 0 5px #f56d7d; }
   .z-row + .z-row { margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--border-subtle); }
   .z-label { font-size: 11px; color: var(--text-3); flex: none; width: 68px; }
   .z-text { flex: 1 1 320px; min-width: 0; }
@@ -158,9 +162,9 @@
   .icon-btn:hover { background: var(--active); color: var(--text); }
   .icon-btn:active { transform: scale(.9); }
   .btn:active, .seg-btn:active, .hmenu-item:active { transform: translateY(1px); }
-  .icon-btn.del:hover { background: #ffecec; color: #f53f3f; }
-  html[data-theme="dark"] .icon-btn.del:hover { background: rgba(245,63,63,.15); }
-  .icon-btn.del.armed { background: #f53f3f; color: #fff; }
+  .icon-btn.del:hover, .btn.del:hover { background: #ffecec; color: #f53f3f; }
+  html[data-theme="dark"] .icon-btn.del:hover, html[data-theme="dark"] .btn.del:hover { background: rgba(245,63,63,.15); }
+  .icon-btn.del.armed, .btn.del.armed { background: #f53f3f !important; color: #fff !important; }
   .icon-btn.busy svg { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -553,6 +557,7 @@
     <button data-view="catpaw"><span data-i18n="妙手">妙手</span><span class="cnt" id="cnt-catpaw">0</span></button>
     <button data-view="trae">Trae<span class="cnt" id="cnt-trae">0</span></button>
     <button data-view="minimax">MiniMax<span class="cnt" id="cnt-minimax">0</span></button>
+    <button data-view="free"><span data-i18n="网页会话">网页会话</span><span class="cnt" id="cnt-free">0</span></button>
     <button data-view="tenrouter">10Router<span class="cnt" id="cnt-tenrouter">–</span></button>
   </nav>
 
@@ -616,6 +621,28 @@
       </div>
       <div class="notice" id="notice" style="display:none"></div>
       <div class="list" id="list"><div class="empty" data-i18n="加载中…">加载中…</div></div>
+    </div>
+  </section>
+
+  <!-- 网页会话：Token Harbor / 小米 MiMo 等网页控制台与登录态资产 -->
+  <section class="view" id="view-free">
+    <div class="panel">
+      <div class="toolbar">
+        <div class="summary">
+          <div class="stat"><span data-i18n="会话总数">会话总数</span><strong id="free-total-count">0</strong></div>
+          <div class="divider"></div>
+          <div class="stat"><span data-i18n="供应商">供应商</span><strong id="free-sites-count">0</strong></div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="btn-free-sync-10r" data-i18n="同步到 10Router">同步到 10Router</button>
+          <button class="btn" id="btn-free-settings" data-i18n="推送设置">推送设置</button>
+          <button class="btn" id="btn-free-refresh" data-i18n="刷新状态">刷新</button>
+        </div>
+      </div>
+      <div class="notice info" style="display:block;margin:10px 14px 0" data-i18n="为网页控制台与登录态型供应商捕获会话 Cookie，自动读取额度与充值余额；多账号按身份归户轮换，凭据只存本机，可一键推送到 10Router 配额大盘。">
+        为网页控制台与登录态型供应商捕获会话 Cookie，自动读取额度与充值余额；多账号按身份归户轮换，凭据只存本机，可一键推送到 10Router 配额大盘。
+      </div>
+      <div id="free-pool-body" style="padding:14px;display:grid;grid-template-columns:repeat(auto-fill, minmax(420px, 1fr));gap:12px"><div class="empty" data-i18n="加载中…">加载中…</div></div>
     </div>
   </section>
 
@@ -765,11 +792,38 @@
 <div class="mask" id="m-trsync">
   <div class="modal sm">
     <div class="modal-title"><span data-i18n="用量同步（同 10router-sync 插件）">用量同步（同 10router-sync 插件）</span><button class="close" data-close>✕</button></div>
-    <div class="field"><label class="check"><input type="checkbox" id="tr-auto"> 每小时自动同步本机用量到 10Router</label></div>
+    <div class="field"><label class="check"><input type="checkbox" id="tr-auto"> <span data-i18n="每小时自动同步本机用量到 10Router">每小时自动同步本机用量到 10Router</span></label></div>
     <div class="field"><label data-i18n="同步来源">同步来源</label><div id="tr-sources"></div></div>
     <div class="hint" data-i18n="ZCode 只同步官方渠道；经 10Router 中转的 mirasim 调用会跳过，避免重复计数。「10Router 本机」只把实例原生产生的行标记为网关同步。10Router 按行签名去重，重复同步不会产生重复数据。">ZCode 只同步官方渠道；经 10Router 中转的 mirasim 调用会跳过，避免重复计数。「10Router 本机」只把实例原生产生的行标记为网关同步。10Router 按行签名去重，重复同步不会产生重复数据。</div>
     <div class="hint" id="tr-sync-status" style="margin-top:8px"></div>
-    <div class="modal-actions"><button class="btn" style="margin-right:auto" id="tr-sync-now" data-i18n="立即同步一次">立即同步一次</button><button class="btn" data-close>取消</button><button class="btn primary" id="tr-sync-save">保存</button></div>
+    <div class="modal-actions"><button class="btn" style="margin-right:auto" id="tr-sync-now" data-i18n="立即同步一次">立即同步一次</button><button class="btn" data-close data-i18n="取消">取消</button><button class="btn primary" id="tr-sync-save" data-i18n="保存">保存</button></div>
+  </div>
+</div>
+
+<!-- 免费额度池：推送设置 -->
+<div class="mask" id="m-free-settings">
+  <div class="modal sm">
+    <div class="modal-title"><span data-i18n="免费额度推送设置">免费额度推送设置</span><button class="close" data-close>✕</button></div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="free-push-auto"> <span data-i18n="自动推送免费额度卡到 10Router（Token Harbor / MiniMax）">自动推送免费额度卡到 10Router（Token Harbor / MiniMax）</span></label>
+    </div>
+    <div class="field">
+      <label data-i18n="推送频率">推送频率</label>
+      <select class="input" id="free-push-interval" style="width:auto">
+        <option value="15" data-i18n="每 15 分钟">每 15 分钟</option>
+        <option value="30" data-i18n="每 30 分钟">每 30 分钟</option>
+        <option value="60" data-i18n="每 1 小时">每 1 小时</option>
+        <option value="120" data-i18n="每 2 小时">每 2 小时</option>
+        <option value="240" data-i18n="每 4 小时">每 4 小时</option>
+      </select>
+    </div>
+    <div class="hint" data-i18n="把 CreditDaddy 解析的免费额度数字（不含凭据）推到 10Router 配额页出卡；卡片在 10Router 具 7 天有效期。点「立即同步一次」或 10Router 页「刷新额度」也会立即推送。">把 CreditDaddy 解析的免费额度数字（不含凭据）推到 10Router 配额页出卡；卡片在 10Router 具 7 天有效期。点「立即同步一次」或 10Router 页「刷新额度」也会立即推送。</div>
+    <div class="hint" id="free-settings-status" style="margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn" style="margin-right:auto" id="free-settings-push-now" data-i18n="立即推送一次">立即推送一次</button>
+      <button class="btn" data-close data-i18n="取消">取消</button>
+      <button class="btn primary" id="free-settings-save" data-i18n="保存">保存</button>
+    </div>
   </div>
 </div>
 
@@ -939,7 +993,7 @@ const I = {
 
 const $ = (id) => document.getElementById(id);
 const state = { accounts: [], quotas: {}, status: null, busy: {}, view: 'dash', region: '', addProduct: '', logTab: 'run', logLevel: 'all', locale: 'zh-CN' };
-const VIEWS = ['dash', 'qoder', 'workbuddy', 'zcode', 'mirasim', 'catpaw', 'trae', 'minimax', 'tenrouter'];
+const VIEWS = ['dash', 'qoder', 'workbuddy', 'zcode', 'mirasim', 'catpaw', 'trae', 'minimax', 'free', 'tenrouter'];
 // 10Router 集成：config 来自 /api/tenrouter，quotas 来自 /api/tenrouter/quotas
 const tr = { config: null, quotas: null, error: null, loading: false, syncing: false };
 const PRODUCTS = [
@@ -962,6 +1016,7 @@ const COMPONENTS = [
   { id: 'catpaw', label: '妙手' },
   { id: 'trae', label: 'Trae' },
   { id: 'minimax', label: 'MiniMax' },
+  { id: 'free', label: '网页会话' },
   { id: 'tenrouter', label: '10Router' },
 ];
 const HIDDEN_COMP_KEY = 'qd_hidden_components';
@@ -1657,13 +1712,16 @@ function creditSum(list) {
 }
 
 function render() {
-  $('z-actions').style.display = 'none';   // 兜底：切到仪表盘 / 10Router 时 renderProd 不跑，先藏起来
+  $('z-actions').style.display = 'none';   // 兜底：切到仪表盘 / 10Router / 免费额度池 时 renderProd 不跑，先藏起来
   $('t-actions').style.display = 'none';
   $('m-actions').style.display = 'none';
   for (const p of PRODUCTS) $('cnt-' + p.id).textContent = ofProduct(p.id).length;
   $('cnt-tenrouter').textContent = tr.quotas ? tr.quotas.connections.length : tr.config && tr.config.configured ? '…' : '–';
+  const freeAccounts = (state.cookieSites || []).reduce((n, s) => n + (s.accounts ? s.accounts.length : 0), 0);
+  if ($('cnt-free')) $('cnt-free').textContent = state.cookieSites ? freeAccounts : (state.accounts.filter((a) => a.meta?.cookieSiteId).length || 0);
   if (state.view === 'dash') renderDash();
   else if (state.view === 'tenrouter') renderTenrouter();
+  else if (state.view === 'free') renderFreePool();
   else renderProd();
 }
 
@@ -2411,13 +2469,134 @@ function trSetupHtml() {
     + '<button class="btn primary" data-tr="settings">' + I.plus + T('配置 10Router</button></div>');
 }
 
-// ── cookie 站点登录捕获(issue #23):tokenharbor 这类「额度只在网页 dashboard」的供应商 ──
+// ── 免费额度池（Token Harbor 等网页会话型供应商） ──
 state.cookieSites = state.cookieSites || null;
 async function loadCookieSites(force) {
   if (state.cookieSites && !force) return state.cookieSites;
   try { state.cookieSites = (await api('/api/cookie-sites')).sites || []; } catch { state.cookieSites = state.cookieSites || []; }
   return state.cookieSites;
 }
+
+function renderFreePool() {
+  const body = $('free-pool-body');
+  if (!body) return;
+  const sites = state.cookieSites;
+  const canCapture = Boolean(window.creditdaddy && typeof window.creditdaddy.openAuthWindow === 'function');
+  if (!sites) { body.innerHTML = T('<div class="dim">加载中…</div>'); loadCookieSites().then(() => renderFreePool()); return; }
+  const totalAccounts = sites.reduce((sum, s) => sum + (s.accounts?.length || 0), 0);
+  if ($('free-total-count')) $('free-total-count').textContent = totalAccounts;
+  if ($('free-sites-count')) $('free-sites-count').textContent = sites.length;
+  if ($('cnt-free')) $('cnt-free').textContent = totalAccounts;
+
+  if (!sites.length) {
+    body.innerHTML = T('<div class="muted-empty">暂无可捕获的供应商</div>');
+    return;
+  }
+
+  body.innerHTML = sites.map((site) => {
+    const rows = site.accounts || [];
+    const stateTxt = rows.length
+      ? T('<span class="badge ok">已捕获 ') + rows.length + T(' 个会话</span>')
+      : T('<span class="badge limited">未捕获</span>');
+    const btn = canCapture
+      ? '<button class="btn primary" data-capture-site="' + esc(site.id) + '">' + I.plus + T('登录捕获') + '</button>'
+      : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">登录捕获</button>');
+    // 「清除已存会话」：登录窗是持久分区（本机留存登录态，第二轮捕获免登录）——
+    // 已经捕获过至少一个会话（=窗里登录过）才出示；点击抹掉该站点落盘的登录分区。
+    const clearBtn = canCapture && rows.length
+      ? ' <button class="btn" data-clear-session="' + esc(site.id) + '" title="' + T('抹掉本机为该站点留存的登录会话（下次捕获需要重新登录）') + '">' + T('清除已存会话') + '</button>'
+      : '';
+    const hint = site.hint ? '<div class="hint" style="margin:2px 0 6px">' + esc(T(site.hint)) + '</div>' : '';
+
+    const formatAccMetric = (acc) => {
+      if (site.id === 'xiaomi-mimo') {
+        const bal = acc.quota?.total ?? acc.mimoBalance?.balance;
+        if (Number.isFinite(bal)) {
+          const cash = acc.mimoBalance?.cash !== undefined ? T(' · 现金 ¥ ') + Number(acc.mimoBalance.cash).toFixed(2) : '';
+          const gift = acc.mimoBalance?.voucher !== undefined ? T(' · 赠送 ¥ ') + Number(acc.mimoBalance.voucher).toFixed(2) : '';
+          return '<span class="pill ok" style="font-weight:600">' + T('可用余额 ¥ ') + Number(bal).toFixed(2) + '</span><span class="dim" style="font-size:11px">' + cash + gift + '</span>';
+        }
+      }
+      if (site.id === 'river') {
+        const bal = acc.quota?.total ?? acc.riverBalance?.balanceUsd;
+        if (Number.isFinite(bal)) {
+          return '<span class="pill ok" style="font-weight:600">' + T('可用余额 $ ') + Number(bal).toFixed(2) + '</span>';
+        }
+      }
+      if (site.id === 'modelscope') {
+        const bal = acc.quota?.total ?? acc.msBalance?.amount;
+        if (Number.isFinite(bal)) {
+          const mb = acc.msBalance || {};
+          const split = Number.isFinite(mb.today) && Number.isFinite(mb.long)
+            ? '<span class="dim" style="font-size:11px">' + T('（今日 ') + Number(mb.today).toFixed(0) + T(' · 长期 ') + Number(mb.long).toFixed(0) + T('）') + '</span>'
+            : '';
+          return '<span class="pill ok" style="font-weight:600">' + T('魔粒余额 ') + Number(bal).toFixed(0) + T(' 个') + '</span>' + split;
+        }
+      }
+      if (site.id === 'longcat') {
+        const bal = acc.quota?.total;
+        if (Number.isFinite(bal)) {
+          const packs = acc.longcatPacks?.packs;
+          const detail = Array.isArray(packs) && packs.length
+            ? '<span class="dim" style="font-size:11px">' + T('（') + packs.length + T(' 个资源包）') + '</span>'
+            : '';
+          return '<span class="pill ok" style="font-weight:600">' + T('Token 余额 ') + Number(bal).toLocaleString() + '</span>' + detail;
+        }
+      }
+      if (site.id === 'tokenharbor') {
+        const used = acc.quota?.used;
+        if (Number.isFinite(used)) {
+          const rem = Math.max(0, 100 - used);
+          return '<span class="pill ' + (rem > 0 ? 'ok' : 'limited') + '" style="font-weight:600">' + T('免费配额 ') + rem + '%</span>'
+            + (acc.quota?.resetAt ? '<span class="dim" style="font-size:11px">' + T(' · ') + esc((relReset({ resetAt: acc.quota.resetAt }) || {}).text || '') + '</span>' : '');
+        }
+      }
+      return '';
+    };
+
+    const accRows = rows.length
+      ? '<div style="margin-top:6px;border-top:1px dashed var(--border-subtle);padding-top:10px;display:grid;gap:8px">'
+        + rows.map((acc) => {
+          const metricHtml = formatAccMetric(acc);
+          // 探活灯三态（meta.lastProbe）：无记录=绿（新捕获即探过）、warn=黄（探测失败）、
+          // dead=红（会话失效需重捕）；tooltip 带失败原因与时间，鼠标悬停即可知病因
+          const lp = acc.lastProbe;
+          const dotCls = lp && !lp.ok ? (lp.status === 'dead' ? 'dot on probe-dead' : 'dot on probe-warn') : 'dot on';
+          const dotTitle = lp && !lp.ok
+            ? esc(T('上次重探失败（') + (lp.at ? fmtTime(lp.at) : '') + T('）：') + (lp.error || '') + (lp.status === 'dead' ? T('。会话已失效，请重新登录捕获') : ''))
+            : esc(T('会话正常（上次重探通过）'));
+          return '<div style="display:flex;flex-direction:column;gap:6px;padding:9px 10px;border-radius:10px;background:var(--hover);border:1px solid var(--border-subtle)">'
+            + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'
+            + '<div style="min-width:0;display:flex;align-items:center;gap:6px;flex:1">'
+            + '<span class="' + dotCls + '" title="' + dotTitle + '"></span>'
+            + '<span data-act="rename" data-id="' + esc(acc.id) + '" style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="' + esc(T('点击修改备注名') + '：' + (acc.name || '')) + '">' + esc(acc.name) + '</span>'
+            + '</div>'
+            + '<div style="display:flex;align-items:center;gap:8px;flex:none">'
+            + '<span class="dim" style="font-size:11.5px">' + (acc.capturedAt ? esc(fmtTime(acc.capturedAt)) : '–') + '</span>'
+            + '<button class="icon-btn" data-act="reprobe" data-site="' + esc(site.id) + '" data-id="' + esc(acc.id) + '" title="' + T('就地重探（免登录，用已存会话刷新身份与额度）') + '">' + I.refresh + '</button>'
+            + '<button class="icon-btn del" data-act="del" data-id="' + esc(acc.id) + '" title="' + T('删除此账号') + '">' + I.trash + '</button>'
+            + '</div></div>'
+            + (metricHtml ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-left:14px">' + metricHtml + '</div>' : '')
+            + '</div>';
+        }).join('') + '</div>'
+      : T('<div class="muted-empty" style="padding:16px 0 6px">还没有捕获该站点的账号，点右上角「登录捕获」开始</div>');
+
+    // justify-content 不用 space-between：网格行高被最高卡撑齐后，单行账号会被推到卡底（沉底）
+    return '<div class="card" style="display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:14px 16px;background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;box-shadow:var(--shadow)">'
+      + '<div><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px">'
+      + '<div style="display:flex;align-items:center;gap:8px">'
+      + '<span style="font-size:14px;font-weight:700">' + esc(site.label || site.name) + '</span>'
+      + stateTxt
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:6px">' + btn + clearBtn + '</div>'
+      + '</div>'
+      + hint
+      + '</div>'
+      + accRows
+      + '</div>';
+  }).join('');
+}
+
 function renderCookieSites() {
   const body = $('cookie-sites-body');
   if (!body) return;
@@ -2454,12 +2633,107 @@ document.getElementById('m-cookie')?.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('[data-capture-site]');
   if (b) cookieSiteCapture(b.dataset.captureSite);
 });
+$('view-free')?.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-capture-site]');
+  if (b) { cookieSiteCapture(b.dataset.captureSite); return; }
+  // 「清除已存会话」：抹掉该站点持久登录分区（下次捕获需重新登录），二次确认防误触
+  const clr = e.target.closest && e.target.closest('[data-clear-session]');
+  if (clr) {
+    const sid = clr.dataset.clearSession;
+    const site = (state.cookieSites || []).find((x) => x.id === sid);
+    uiConfirm(T('清除「{name}」在本机留存的登录会话？已捕获的账号数据不受影响，仅下次捕获需要重新登录。', { name: site?.name || sid }))
+      .then((yes) => { if (yes) cookieSiteClearSession(sid); });
+    return;
+  }
+  const delBtn = e.target.closest && e.target.closest('[data-act="del"]');
+  if (delBtn) {
+    onCardClick({ target: delBtn, preventDefault: () => {} });
+    return;
+  }
+  // 就地重探：用已存会话 cookie 重跑身份+额度（身份解析失败/额度过期时免登录修复）
+  const rep = e.target.closest && e.target.closest('[data-act="reprobe"]');
+  if (rep) { onCardClick({ target: rep, preventDefault: () => {} }); return; }
+  // 账号名点击改备注名（10R「同名认领」的匹配键就从这里改）
+  const ren = e.target.closest && e.target.closest('[data-act="rename"]');
+  if (ren) onCardClick({ target: ren, preventDefault: () => {} });
+});
+$('btn-free-refresh')?.addEventListener('click', () => {
+  loadCookieSites(true).then(() => { renderFreePool(); render(); });
+});
+$('btn-free-settings')?.addEventListener('click', openFreeSettings);
+// 「同步到 10Router」= 推连接（会话凭据）+ 推额度卡（issue #24 数字快照），一键两路
+$('btn-free-sync-10r')?.addEventListener('click', async () => {
+  await trSyncAccounts();
+  const btn = $('btn-free-sync-10r');
+  if (!(tr.config && tr.config.configured)) return;
+  btn.disabled = true;
+  try {
+    const r = await api('/api/tenrouter/push-quota', { method: 'POST' });
+    const failed = (r.results || []).filter((x) => x.status === 'failed');
+    if (failed.length) toast(T('额度卡部分推送失败：') + failed.map((x) => x.source + '（' + x.error + '）').join('；'), false);
+    else if ((r.results || []).length) toast(T('额度卡已推送到 10Router 配额页'), true);
+  } catch (e) { toast(e.message, false); }
+  btn.disabled = false;
+});
+
+async function openFreeSettings() {
+  await loadTrConfig();
+  const c = tr.config || {};
+  $('free-push-auto').checked = c.configured ? (c.quotaPush?.enabled !== false) : true;
+  $('free-push-interval').value = String(c.quotaPush?.intervalMin || 60);
+  const statusEl = $('free-settings-status');
+  if (statusEl) {
+    if (!c.configured) {
+      statusEl.innerHTML = T('<span style="color:var(--warn)">10Router 尚未配置地址与虚拟 key，请先到 10Router 页完成连接。</span>');
+    } else {
+      const lp = c.quotaPush?.lastPush;
+      statusEl.textContent = lp ? T('上次推送：') + fmtTime(lp).slice(5) : T('尚未推送过额度卡');
+    }
+  }
+  openModal('m-free-settings');
+}
+$('free-settings-save')?.addEventListener('click', async () => {
+  try {
+    tr.config = await api('/api/tenrouter', {
+      method: 'PUT',
+      json: {
+        quotaPushEnabled: $('free-push-auto').checked,
+        quotaPushIntervalMin: Number($('free-push-interval').value),
+      },
+    });
+    closeModal('m-free-settings');
+    toast(T('免费额度推送设置已保存'));
+  } catch (e) { toast(e.message, false); }
+});
+$('free-settings-push-now')?.addEventListener('click', async () => {
+  const btn = $('free-settings-push-now');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/tenrouter/push-quota', { method: 'POST' });
+    const failed = (r.results || []).filter((x) => x.status === 'failed');
+    if (failed.length) toast(T('额度卡部分推送失败：') + failed.map((x) => x.source + '（' + x.error + '）').join('；'), false);
+    else if ((r.results || []).length) toast(T('额度卡已推送到 10Router 配额页'), true);
+    else toast(T('没有需要推送的额度卡（请确认已有捕获会话或有效账号）'));
+    await loadTrConfig();
+    const lp = tr.config?.quotaPush?.lastPush;
+    if ($('free-settings-status') && lp) $('free-settings-status').textContent = T('上次推送：') + fmtTime(lp).slice(5);
+  } catch (e) { toast(e.message, false); }
+  btn.disabled = false;
+});
 
 async function cookieSiteCapture(siteId) {
   const site = (state.cookieSites || []).find((x) => x.id === siteId);
   if (!site || !window.creditdaddy || typeof window.creditdaddy.openAuthWindow !== 'function') return;
-  const r = await window.creditdaddy.openAuthWindow(site.loginUrl);
+  // cookie-site 站点走持久登录分区：本窗登录一次，下一轮捕获/重探复用会话（免二次登录，
+  // 谷歌 SSO 场景免重复验证码）。「清除已存会话」可随时抹掉这份落盘会话。
+  const r = await window.creditdaddy.openAuthWindow(site.loginUrl, { persistKey: 'cookie-site-' + siteId });
   if (!r || r.ok !== true) toast(T('打开登录窗口失败：') + ((r && r.error) || ''), false);
+}
+async function cookieSiteClearSession(siteId) {
+  if (!window.creditdaddy || typeof window.creditdaddy.clearCookieSiteSession !== 'function') return;
+  const r = await window.creditdaddy.clearCookieSiteSession('cookie-site-' + siteId);
+  if (r && r.ok) toast(T('已清除该站点的已存登录会话'), true);
+  else toast(T('清除失败：') + ((r && r.error) || ''), false);
 }
 if (window.creditdaddy && typeof window.creditdaddy.onCookieCaptured === 'function') {
   window.creditdaddy.onCookieCaptured((payload) => {
@@ -2468,7 +2742,12 @@ if (window.creditdaddy && typeof window.creditdaddy.onCookieCaptured === 'functi
     toast(T('{name} cookie 捕获成功，同步到 10Router 后卡片点亮', { name: name || '' }), true);
     state.cookieSites = null;
     Promise.allSettled([loadCookieSites(true), refreshAccountList(), loadTrQuotas(true)])
-      .then(() => { if (state.view === 'tenrouter') renderTenrouter(); renderCookieSites(); renderDash(); });
+      .then(() => {
+        if (state.view === 'tenrouter') renderTenrouter();
+        if (state.view === 'free') renderFreePool();
+        renderCookieSites();
+        renderDash();
+      });
   });
 }
 
@@ -2608,7 +2887,13 @@ function openTrSync() {
 }
 async function trSyncSave(close) {
   try {
-    tr.config = await api('/api/tenrouter', { method: 'PUT', json: { syncEnabled: $('tr-auto').checked, sources: [...document.querySelectorAll('#tr-sources input[data-src]:checked')].map((x) => x.dataset.src) } });
+    tr.config = await api('/api/tenrouter', {
+      method: 'PUT',
+      json: {
+        syncEnabled: $('tr-auto').checked,
+        sources: [...document.querySelectorAll('#tr-sources input[data-src]:checked')].map((x) => x.dataset.src),
+      },
+    });
     if (close) { closeModal('m-trsync'); toast(T('用量同步设置已保存')); render(); }
   } catch (e) { toast(e.message, false); throw e; }
 }
@@ -2671,7 +2956,7 @@ $('tr-panel').addEventListener('click', (e) => {
   if (b.dataset.tr === 'settings') openTrSettings();
   else if (b.dataset.tr === 'refresh') loadTrQuotas(true);
   else if (b.dataset.tr === 'sync') openTrSync();
-  else if (b.dataset.tr === 'cookie-sites') openCookieSitesModal();
+  else if (b.dataset.tr === 'cookie-sites') goView('free');
   else if (b.dataset.tr === 'vendor') {
     const v = b.dataset.v || '';
     state.trVendor = v;
@@ -2685,6 +2970,7 @@ $('tr-sync-now').onclick = async () => {
   try { await trSyncSave(false); } catch (e) { return; }
   closeModal('m-trsync');
   trSync();
+  api('/api/tenrouter/push-quota', { method: 'POST' }).catch(() => {});
 };
 $('tr-sync-accounts').onclick = trSyncAccounts;
 $('tr-save').onclick = trSave;
@@ -2835,7 +3121,8 @@ async function checkinAll(btn, product) {
 async function onCardClick(e) {
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
-  const id = btn.closest('.card').dataset.id;
+  const id = btn.dataset.id || btn.closest('.card')?.dataset?.id;
+  if (!id) return;
   const act = btn.dataset.act;
   if (act === 'checkin') return checkinOne(id);
   if (act === 'quota') { loadQuotas([id]); return; }
@@ -2909,8 +3196,31 @@ async function onCardClick(e) {
     const a = state.accounts.find((x) => x.id === id);
     const name = await uiPrompt(T('修改备注名'), a && a.name || '', { okText: T('保存') });
     if (name === null) return;
-    try { await api('/api/accounts/' + encodeURIComponent(id), { method: 'PATCH', json: { name } }); await loadAccounts(); }
+    try {
+      await api('/api/accounts/' + encodeURIComponent(id), { method: 'PATCH', json: { name } });
+      // 推卡 label 跟随别名——网页会话型账号改完名立刻推一轮，10R 侧同名认领不等下一个周期
+      if (['river', 'xiaomi-mimo', 'tokenharbor', 'modelscope'].includes(a?.provider)) api('/api/tenrouter/push-quota', { method: 'POST' }).catch(() => {});
+      await loadAccounts();
+      // 网页会话页的行名来自 cookie-sites 视图——改完同步刷新，别名即刻可见（推送 label 也随它走）
+      await loadCookieSites(true);
+      if (state.view === 'free') renderFreePool();
+    }
     catch (err) { toast(err.message, false); }
+    return;
+  }
+  if (act === 'reprobe') {
+    const site = btn.dataset.site || '';
+    btn.disabled = true;
+    try {
+      const r = await api('/api/cookie-sites/' + encodeURIComponent(site) + '/reprobe', { method: 'POST', json: { accountId: id } });
+      const one = (r.results || []).find((x) => x.id === id) || (r.results || [])[0];
+      if (one && one.ok) {
+        toast(T('重探完成：') + (one.identity ? one.identity + ' · ' : '') + (one.balance != null ? one.balance : ''), true);
+      } else toast(T('重探失败：') + ((one && one.error) || ''), false);
+      await loadCookieSites(true);
+      if (state.view === 'free') renderFreePool();
+    } catch (err) { toast(err.message, false); }
+    btn.disabled = false;
     return;
   }
   if (act === 'del') {
@@ -2921,7 +3231,15 @@ async function onCardClick(e) {
       return;
     }
     clearTimeout(armed[id]); delete armed[id];
-    try { await api('/api/accounts/' + encodeURIComponent(id), { method: 'DELETE' }); toast(T('已删除')); delete state.quotas[id]; await loadAccounts(); }
+    try {
+      await api('/api/accounts/' + encodeURIComponent(id), { method: 'DELETE' });
+      toast(T('已删除'));
+      delete state.quotas[id];
+      await loadAccounts();
+      await loadCookieSites(true);
+      renderFreePool();
+      render();
+    }
     catch (err) { toast(err.message, false); }
   }
 }
@@ -4032,8 +4350,10 @@ function applyView() {
   state.trVendor = state.view === 'tenrouter' && sub ? decodeURIComponent(sub) : '';
   document.querySelectorAll('#nav button').forEach((x) => x.classList.toggle('active', x.dataset.view === state.view));
   $('view-dash').classList.toggle('active', state.view === 'dash');
-  $('view-prod').classList.toggle('active', state.view !== 'dash' && state.view !== 'tenrouter');
+  $('view-prod').classList.toggle('active', state.view !== 'dash' && state.view !== 'tenrouter' && state.view !== 'free');
+  $('view-free').classList.toggle('active', state.view === 'free');
   $('view-10r').classList.toggle('active', state.view === 'tenrouter');
+  if (state.view === 'free') loadCookieSites();
   if (state.view === 'tenrouter') loadZGateway();
   if (state.view === 'minimax') loadMGateway();
   if (state.view === 'trae') loadTGateway();

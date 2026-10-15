@@ -199,3 +199,32 @@ test('isNewerRebuild:仅 release 渠道 + commit 不同 + builtAt 更晚才算�
   assert.equal(isNewerRebuild(base({}), null), false);
   assert.equal(isNewerRebuild(base({}), { commit: '', builtAt: '' }), false);
 });
+
+test('重新登录刷新 Qoder 网页会话：新收割的 cookie 必须替换旧会话（回归：旧守卫让过期会话无法更新）', async () => {
+  const { addAccount } = await import('../src/accounts.js');
+  const { withSettings, withAccounts } = await import('../src/store.js');
+  const home = path.join(os.tmpdir(), 'creditdaddy-qoder-resess-');
+  await fs.mkdir(home, { recursive: true });
+  const saved = process.env.CREDITDADDY_HOME;
+  process.env.CREDITDADDY_HOME = home;
+  try {
+    // 首登入库 + 挂上旧会话（= 10R 卡上「网页会话已失效」的账号形状）
+    const r1 = await addAccount({ provider: 'qoder-cn', token: 'dt-AAA', uid: 'u-1', name: '主号' }, { trusted: true, verify: false });
+    await withAccounts((list) => {
+      const a = list.find((x) => x.id === r1.account.id);
+      a.meta = { ...(a.meta || {}), qoderWebSession: { cookie: 'OLDCOOKIE=0', capturedAt: '2026-10-01T00:00:00Z' } };
+    });
+    // 重新登录（token 轮换），登录窗收割到新 cookie → pending 暂存 → addAccount 触发挂载
+    await withSettings((s) => { s.pendingQoderWebSessions = { 'u-1': { kind: 'qoder-cn', cookie: 'NEWCOOKIE=1', capturedAt: new Date().toISOString() } }; });
+    const r2 = await addAccount({ provider: 'qoder-cn', token: 'dt-BBB', uid: 'u-1', name: '主号' }, { trusted: true, verify: false });
+    assert.equal(r2.account.meta?.qoderWebSession?.cookie, 'NEWCOOKIE=1', '新 cookie 必须替换旧会话');
+    assert.notEqual(r2.account.meta?.qoderWebSession?.capturedAt, '2026-10-01T00:00:00Z', 'capturedAt 必须刷新');
+    assert.equal(r2.account.token, 'dt-BBB', 'token 照常轮换');
+    // 暂存区清空（不残留死信）
+    const s = JSON.parse(await fs.readFile(path.join(home, 'settings.json'), 'utf8'));
+    assert.ok(!s.pendingQoderWebSessions?.['u-1'], '暂存项必须被消费掉');
+  } finally {
+    process.env.CREDITDADDY_HOME = saved;
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});

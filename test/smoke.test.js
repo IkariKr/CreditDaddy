@@ -256,6 +256,16 @@ test('本机模式拒绝 DNS 重绑定与跨站请求', () => {
   assert.ok(rejectForeignRequest({ host: '192.168.1.10:47860', origin: 'http://evil.lan' }, '0.0.0.0'), '跨站 Origin 仍应被拒绝');
 });
 
+test('quota-refresh 回调豁免跨站 Origin（HMAC 自鉴权），Host 闸照常', () => {
+  const bind = '127.0.0.1';
+  // 10R 配额卡按钮浏览器直连：Origin 必然外站，该路径放行（防伪交给签名+限流）
+  assert.equal(rejectForeignRequest({ host: '127.0.0.1:47860', origin: 'https://10router.example.com' }, bind, '/api/quota-refresh'), null);
+  // 其余 API 路径跨站照拒（豁免只给回调）
+  assert.ok(rejectForeignRequest({ host: '127.0.0.1:47860', origin: 'https://10router.example.com' }, bind, '/api/accounts'), '其他路径跨站仍应被拒绝');
+  // Host 闸不豁免：DNS 重绑定照挡
+  assert.ok(rejectForeignRequest({ host: 'evil.example.com', origin: 'https://10router.example.com' }, bind, '/api/quota-refresh'), '回调路径陌生 Host 仍应被拒绝');
+});
+
 test('extractTokens 提取并去重 dt-/pt- token', () => {
   const text = 'a dt-AAAAAAAAAAAAAAAAAAAA b pt-BBBBBBBBBBBBBBBBBBBB dt-AAAAAAAAAAAAAAAAAAAA dt-short';
   assert.deepEqual(extractTokens(text).sort(), ['dt-AAAAAAAAAAAAAAAAAAAA', 'pt-BBBBBBBBBBBBBBBBBBBB']);

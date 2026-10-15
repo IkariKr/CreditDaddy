@@ -532,3 +532,21 @@ test('来源版本迁移：v2 配置自动并入 10r，不复活已禁用的旧�
   assert.ok(!c.sync.sources.includes('catpaw'), '用户没勾的旧来源不复活');
   assert.equal(c.sync.sourcesVersion, 3);
 });
+
+test('quotaPush 配置：开关与频率保存、默认开启、最小频率 15 分钟', async () => {
+  await tr.updateConfig({ quotaPushEnabled: false, quotaPushIntervalMin: 30 });
+  let c = tr.loadConfig();
+  assert.equal(c.quotaPush.enabled, false);
+  assert.equal(c.quotaPush.intervalMin, 30);
+
+  // 频率下限 15 分钟
+  await tr.updateConfig({ quotaPushEnabled: true, quotaPushIntervalMin: 5 });
+  c = tr.loadConfig();
+  assert.equal(c.quotaPush.enabled, true);
+  assert.equal(c.quotaPush.intervalMin, 15);
+
+  const pub = await tr.publicConfig();
+  assert.equal(pub.quotaPush.enabled, true);
+  assert.equal(pub.quotaPush.intervalMin, 15);
+});
+

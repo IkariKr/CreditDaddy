@@ -7,7 +7,8 @@
  *
  * 鉴权：authorization: Cloud-IDE-JWT <jwt>（本机客户端 storage.json 解出的那个）。
  * 这些接口是 IDE 自己在调的，因此必须带全套 IDE 请求头；风控要求 x-device-id 为纯数字设备号，
- * 传 GUID 会返回 code 9074。响应统一信封 { code, message, ... }，code !== 0 即业务失败。
+ * 传 GUID 会返回 code 9074。多账号签到时每号必须用独立设备码（同一设备号服务端限每日一领），
+ * 故 x-device-id 按 uid 确定性派生。响应统一信封 { code, message, ... }，code !== 0 即业务失败。
  *
  * 请求头集与错误码口径来自社区逆向（TraeWorkAssistant trae_checkin.rs / star620 TraeApiClient.cs 实测）。
  */
@@ -55,8 +56,10 @@ export function traeDevice(uid, storedDeviceId) {
   m[8] = (m[8] & 0x3f) | 0x80;
   const h = m.map((b) => b.toString(16).padStart(2, '0')).join('');
   return {
-    // 优先用客户端自报的真实设备号，缺失时回落 uid 派生值
-    deviceId: /^\d{8,}$/.test(String(storedDeviceId || '')) ? String(storedDeviceId) : d.join(''),
+    // x-device-id 按 uid 派生（每号独立且稳定）：本机导入的 N 个账号若共用客户端自报的
+    // 同一设备号，服务端按设备限每日一领——第二个账号起签到必吃 9074（issue #28，
+    // TraeTools 的「设备码切换」本质就是给每个账号换独立设备码）。这里不落 storedDeviceId。
+    deviceId: d.join(''),
     marketUserId: `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`,
     sessionId: seeded(uid, 'sess', 32).map((b) => b.toString(16).padStart(2, '0')).join(''),
   };
