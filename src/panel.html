@@ -2749,26 +2749,8 @@ $('free-settings-push-now')?.addEventListener('click', async () => {
 async function cookieSiteCapture(siteId) {
   const site = (state.cookieSites || []).find((x) => x.id === siteId);
   if (!site || !window.creditdaddy || typeof window.creditdaddy.openAuthWindow !== 'function') return;
-  // 单会话站点（服务端同号新登录踢旧会话——MiMo 实测）：该站点已有捕获行时给出三选：
-  //  继续持久窗（默认）= 复用已存登录态，但切号要登出旧号 → 旧号会话作废；
-  //  隐私窗 = 全新无痕会话，不碰已存分区 → 新旧账号并存（单会话站点的多号解法）；
-  //  取消 = 不动。
-  const siteRows = (state.cookieSites.find((x) => x.id === siteId)?.accounts || []);
-  if (siteRows.length && site.singleSession !== false) {
-    const choice = await uiConfirm(
-      T('该站点已有 {n} 个已捕获会话。部分站点（如小米 MiMo）同一账号只保留一个网页会话——在持久登录窗里切换账号会使旧账号的会话失效（面板行转红，余额数字保留存档）。', { n: siteRows.length })
-        + T('\n\n「使用隐私窗口」以全新无痕会话捕获新账号，不影响已捕获账号（多账号并存推荐）。'),
-      T('登录捕获'), T('继续'), T('使用隐私窗口'));
-    if (choice === false) return;            // 取消
-    if (choice === 'alt') {                  // 隐私窗：无痕分区（不带 persistKey）
-      const r = await window.creditdaddy.openAuthWindow(site.loginUrl);
-      if (!r || r.ok !== true) toast(T('打开登录窗口失败：') + ((r && r.error) || ''), false);
-      return;
-    }
-    // choice === true → 继续走持久窗
-  }
   // cookie-site 站点走持久登录分区：本窗登录一次，下一轮捕获/重探复用会话（免二次登录，
-  // 谷歌 SSO 场景免重复验证码）。「清除已存会话」可随时抹掉这份落盘会话。
+  // 谷歌 SSO 场景免重复验证码）。若要换号，点卡片上的「清除已存会话」即可抹掉已存登录态重新登录。
   const r = await window.creditdaddy.openAuthWindow(site.loginUrl, { persistKey: 'cookie-site-' + siteId });
   if (!r || r.ok !== true) toast(T('打开登录窗口失败：') + ((r && r.error) || ''), false);
 }

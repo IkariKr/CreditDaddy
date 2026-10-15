@@ -1304,8 +1304,39 @@ async function handleApi(req, res, url) {
     });
     if (ih) logger.info('COOKIE-SITE', '{name} 身份归户({identity},账号轮换键生效)', { name: site.name, identity });
     logger.info('COOKIE-SITE', '{name} cookie 捕获成功(探测通过,同步到 10Router 后卡片点亮)', { name: site.name });
-    // 捕获成功后立即尝试推一轮额度卡（若已配 10Router，卡片秒级点亮）
-    tenrouter.pushQuotaCards().catch(() => {});
+    // 捕获成功后只推当前站点的额度卡（单号精准推送，绝不全量刷屏）
+    (async () => {
+      try {
+        if (site.id === 'tokenharbor') {
+          await tenrouter.pushQuotaCards({ onlySources: ['tokenharbor'] });
+        } else if (accountId) {
+          const accs = await loadAccounts();
+          const target = accs.find((x) => x.id === accountId);
+          if (target) {
+            let src = null;
+            if (site.id === 'xiaomi-mimo') {
+              const { buildXiaomiMimoQuotaPayload } = await import('./xiaomiMimoClient.js');
+              src = buildXiaomiMimoQuotaPayload(target).source;
+            } else if (site.id === 'river') {
+              const { buildRiverQuotaPayload } = await import('./riverClient.js');
+              src = buildRiverQuotaPayload(target).source;
+            } else if (site.id === 'modelscope') {
+              const { buildModelScopeQuotaPayload } = await import('./modelscopeClient.js');
+              src = buildModelScopeQuotaPayload(target).source;
+            } else if (site.id === 'xiaohuanxiong') {
+              const { buildXhxQuotaPayload } = await import('./xiaohuanxiongClient.js');
+              src = buildXhxQuotaPayload(target).source;
+            } else if (site.id === 'longcat') {
+              const { buildLongcatQuotaPayload } = await import('./longcatClient.js');
+              src = buildLongcatQuotaPayload(target).source;
+            }
+            if (src) await tenrouter.pushQuotaCards({ onlySources: [src] });
+          }
+        }
+      } catch (pushErr) {
+        logger.warn('COOKIE-SITE', '{name} 捕获后单路推卡失败:{err}', { name: site.name, err: pushErr.message });
+      }
+    })().catch(() => {});
     return json(res, 200, { ok: true, accountId });
   }
 
@@ -1330,9 +1361,11 @@ async function handleApi(req, res, url) {
         const m = await import(
           site.id === 'xiaomi-mimo' ? './xiaomiMimoClient.js'
           : site.id === 'river' ? './riverClient.js'
+          : site.id === 'longcat' ? './longcatClient.js'
           : site.id === 'xiaohuanxiong' ? './xiaohuanxiongClient.js' : './modelscopeClient.js');
         const build = site.id === 'xiaomi-mimo' ? m.buildXiaomiMimoQuotaPayload
           : site.id === 'river' ? m.buildRiverQuotaPayload
+          : site.id === 'longcat' ? m.buildLongcatQuotaPayload
           : site.id === 'xiaohuanxiong' ? m.buildXhxQuotaPayload : m.buildModelScopeQuotaPayload;
         return build(a).source;
       } catch { return null; }

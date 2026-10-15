@@ -558,7 +558,8 @@ async function openIncognitoWindow(url, { persistKey } = {}) {
   // 探测被拒的错位（同一个站两种出口，一边通一边拒最难排查）。规则型代理（Clash 等）
   // 对国内站点自动直连，不影响 MiMo / 小浣熊 / LongCat 等国内站登录。
   const cookieSite = cookieSitesLib && typeof cookieSitesLib.siteForLoginUrl === 'function' ? cookieSitesLib.siteForLoginUrl(url) : null;
-  if (/\/\/qoder\.com(\/|$)/.test(url) || cookieSite) {
+  const isQoderUrl = /(:\/\/|\.)qoder\.(com|cn)(\/|$)/.test(url);
+  if (isQoderUrl || cookieSite) {
     const proxy = daemonMod && typeof daemonMod.getLoginProxyUrl === 'function' ? daemonMod.getLoginProxyUrl() : null;
     if (proxy) await ses.setProxy({ proxyRules: proxy, proxyBypassRules: '<local>' }).catch(() => {});
   }
@@ -623,7 +624,7 @@ async function openIncognitoWindow(url, { persistKey } = {}) {
     // 必须先等收割完成再清存储——两者并发的话 clearStorageData 会抢先抹掉 Cookie，
     // 收割永远是空的（国际版「缺网页会话」长期修不好的根因）。
     const jobs = [];
-    if (/\.qoder\.(com|cn)(\/|$)/.test(url)) jobs.push(harvestQoderWebSession(ses));
+    if (isQoderUrl) jobs.push(harvestQoderWebSession(ses));
     if (cookieSite) jobs.push(harvestCookieSiteSession(ses, cookieSite));
     Promise.allSettled(jobs)
       .catch(() => {})
@@ -675,7 +676,8 @@ async function probeViaHiddenWindow(ses, site, timeoutMs = 20000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const html = await w.webContents.executeJavaScript('document.documentElement ? document.documentElement.outerHTML : ""').catch(() => '');
-      if (html && html.includes(site.probe.match)) return html;
+      const matchOk = typeof site.probe.match === 'function' ? site.probe.match(html) : (site.probe.match && html.includes(site.probe.match));
+      if (html && matchOk) return html;
       // 登录页壳出现 = 会话被拒,提前终止(与 daemon 的 invalid 分类对齐)
       if (html && /sign\s?in|log\s?in/i.test(html) && html.length > 500) return html;
       await new Promise((r) => setTimeout(r, 500));

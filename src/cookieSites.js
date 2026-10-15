@@ -68,11 +68,22 @@ export const COOKIE_SITES = [
     label: 'Token Harbor 免费额度（10Router 卡片）',
     loginUrl: 'https://tokenharbor.ai/login',
     homeUrl: 'https://tokenharbor.ai',
-    probe: { url: 'https://tokenharbor.ai/dashboard', match: 'Free allowance' },
-    // 免费账号要多账号轮换(#23 增补):身份从浏览器探针 HTML 里抽(邮箱通用正则)。
-    // 抽不到 → 归到「未识别身份」单例,不影响既有行;有多账号需求的站点在配置里
-    // 统一按这个抽,验证/合并逻辑对全表通用,不再一家一家硬编码。
-    identity: { fromHtml: /[\w.+-]+@[\w-]+\.[\w.]+/ },
+    // 探测标记：由于 Token Harbor 的 dashboard 页面将 Free allowance 移至客户端动态组件中渲染，
+    // SSR 阶段只直出用户上下文（userEmail）。为兼顾 Node 探测与隐藏浏览器探针，满足其一即代表会话正常有效。
+    probe: {
+      url: 'https://tokenharbor.ai/dashboard',
+      match: (html) => html.includes('Free allowance') || /userEmail[\\"]*:[\\"]*[^\\",]+@[^\\",]+/.test(html),
+    },
+    // 免费账号要多账号轮换(#23 增补):身份优先从 Next.js SSR state 的 userEmail 抽，兜底邮箱正则。
+    identity: {
+      fromHtml: {
+        exec: (str) => {
+          const m = /userEmail[\\"]*:[\\"]*([^\\",]+)/.exec(str);
+          if (m && m[1] && m[1].includes('@')) return [m[1].trim()];
+          return /[\w.+-]+@[\w-]+\.[\w.]+/.exec(str);
+        },
+      },
+    },
     // issue #24：捕获时顺手解析网页读数，存 meta.quotaSnapshot 供额度推送消费
     quota: { fromHtml: parseTokenHarborQuota },
     accountName: 'Token Harbor 网页会话',
@@ -184,6 +195,12 @@ function probeUrl(site) {
   return env || site.probe.url;
 }
 
+function testProbeMatch(site, text) {
+  if (!site?.probe?.match) return true;
+  if (typeof site.probe.match === 'function') return Boolean(site.probe.match(text));
+  return text.includes(site.probe.match);
+}
+
 /**
  * 探测一份会话 cookie 是否仍然有效。
  * 探测走 fetchJsonRace（跟随全局代理配置——Token Harbor 对大陆/港澳有封锁，出口代理是必须项）。
@@ -198,7 +215,7 @@ export async function verifySiteCookie(site, cookie, { fetchImpl } = {}) {
     if (r.status === 401 || r.status === 403) return { ok: false, reason: 'invalid', status: r.status };
     if (r.status !== 200) return { ok: false, reason: 'http', status: r.status };
     const text = await r.text();
-    if (site.probe.match && !text.includes(site.probe.match)) {
+    if (!testProbeMatch(site, text)) {
       // 被挡回登录页 = 会话失效（与 10Router 的 AUTH_EXPIRED 分类对齐），不是「页面结构变化」
       return { ok: false, reason: looksLikeLoginPage(text) ? 'invalid' : 'no-match', status: r.status };
     }
@@ -214,7 +231,7 @@ export async function verifySiteCookie(site, cookie, { fetchImpl } = {}) {
  */
 export function verifyProbeHtml(site, html) {
   const text = String(html || '');
-  if (site.probe.match && !text.includes(site.probe.match)) {
+  if (!testProbeMatch(site, text)) {
     return { ok: false, reason: looksLikeLoginPage(text) ? 'invalid' : 'no-match' };
   }
   return { ok: true };
