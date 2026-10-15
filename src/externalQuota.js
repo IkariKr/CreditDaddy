@@ -356,44 +356,7 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
     }
   }
 
-  // 5. 办公小浣熊（issue #27：积分余额卡）——raccoon_token cookie 读裸域 balance；
-  //    每日 00:00 自动发放（无签到动作端点），会话失效（401/code 200001）降级 message 状态卡。
-  const xhxAccounts = (accounts || []).filter((a) => (a.provider === 'xiaohuanxiong' || a.meta?.cookieSiteId === 'xiaohuanxiong') && a.token);
-  if (xhxAccounts.length) {
-    const { fetchRaccoonBalance, buildXhxQuotaPayload } = await import('./xiaohuanxiongClient.js');
-    for (const a of xhxAccounts) {
-      // onlySource 先判：别路 source 不打小浣熊上游
-      const { source } = buildXhxQuotaPayload(a);
-      if (only && !only.includes(source)) continue;
-      const skipDead = !only && deadSkip(a);   // 单卡回调不跳过——用户显式刷新必须真试
-      let liveData = null;
-      if (skipDead) {
-        liveData = { error: '会话已失效（后台低频重试等待中，跳过本轮 live 拉取）', authInvalid: true };
-      } else {
-        try {
-          const b = await fetchRaccoonBalance(a.token, { fetchImpl });
-          if (b.ok) liveData = { balance: b.balance, buckets: b.buckets };
-          else liveData = liveError(b);
-          probeMark(a, b.ok, b.error);
-        } catch (err) {
-          liveData = { error: err.message };
-          probeMark(a, false, err.message);
-        }
-      }
-      const { payload } = buildXhxQuotaPayload(a, liveData);
-      try {
-        assertScalarOnly(payload, source);
-        const r = await pushOne({ endpoint, key, source, payload, fetchImpl, refreshUrl: await rurl(source) });
-        results.push({ source, status: 'ok', entries: r.entries });
-        logger.info('10R', '额度卡已推送：{source}（{n} 行）', { source, n: r.entries ?? (Object.keys(payload.quotas || {}).length || 0) });
-      } catch (e) {
-        results.push({ source, status: 'failed', error: e.message });
-        logger.warn('10R', '额度卡推送失败 {source}:{err}', { source, err: e.message });
-      }
-    }
-  }
-
-  // 6. LongCat（issue #29：Token 资源包卡）——美团 SSO cookie 读平台 summary；
+  // 5. LongCat（issue #29：Token 资源包卡）——美团 SSO cookie 读平台 summary；
   //    储值卡 + 逐包明细（消耗顺序官方规则：购买包未动时先烧赠送包），会话失效降级 message 状态卡。
   const lcAccounts = (accounts || []).filter((a) => (a.provider === 'longcat' || a.meta?.cookieSiteId === 'longcat') && a.token);
   if (lcAccounts.length) {

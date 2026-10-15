@@ -223,29 +223,6 @@ async function reprobeCookieAccount(site, a) {
       logger.info('COOKIE-SITE', '{name} 就地重探通过（{balance} 个，身份 {identity}）', { name: site.name, balance: probe.balance, identity: probe.identity || '—' });
       return finish({ id: a.id, name: a.name, ok: true, identity: probe.identity, balance: probe.balance, today: probe.msBalance.today, long: probe.msBalance.long, quotaSnapshot: { used: 0, total: probe.balance, isCreditBalance: true, at: now } });
     }
-    if (site.id === 'xiaohuanxiong') {
-      const { fetchRaccoonBalance, fetchRaccoonIdentity } = await import('./xiaohuanxiongClient.js');
-      const bal = await fetchRaccoonBalance(cookie);
-      if (!bal.ok) return finish({ id: a.id, name: a.name, ok: false, error: bal.error || '余额探测失败' });
-      const ident = await fetchRaccoonIdentity(cookie).catch(() => null);
-      await withAccounts((list) => {
-        const hit = list.find((x) => x.id === a.id);
-        if (!hit) return;
-        hit.meta = {
-          ...(hit.meta || {}),
-          cookieSiteSession: { cookie, capturedAt: hit.meta?.cookieSiteSession?.capturedAt || now },
-          ...(ident ? { raccoonSession: ident } : {}),
-          raccoonBalance: { amount: bal.balance, buckets: bal.buckets, at: now },
-          quotaSnapshot: { used: 0, total: bal.balance, isCreditBalance: true, at: now },
-        };
-        if (ident?.id) hit.uid = String(ident.id);
-        const nameStr = ident?.email || ident?.name || ident?.id || null;
-        if (canAutoRename(site, hit) && nameStr) hit.name = `办公小浣熊 (${nameStr})`;
-        hit.updatedAt = now;
-      });
-      logger.info('COOKIE-SITE', '{name} 就地重探通过（{balance} 分，身份 {identity}）', { name: site.name, balance: bal.balance, identity: ident?.email || ident?.name || '—' });
-      return finish({ id: a.id, name: a.name, ok: true, identity: ident?.email || ident?.name || null, balance: bal.balance, quotaSnapshot: { used: 0, total: bal.balance, isCreditBalance: true, at: now } });
-    }
     if (site.id === 'longcat') {
       // LongCat（issue #29）：资源包 summary API 即探测（cookie 直连），重探刷新全部 ACTIVE 包快照
       const { fetchLongcatPacks, longcatSnapshot, fetchLongcatIdentity } = await import('./longcatClient.js');
@@ -612,7 +589,7 @@ async function handleApi(req, res, url) {
       // 单位标注：各家余额单位互异（Token / USD / CNY / 魔粒 / 积分）且都不是「积分」
       // 口径——带 unit 返回，面板 creditSum 按 unit 有无决定是否计入「剩余积分」合计
       //（有单位 = 不同量纲，不相加）。HTML 探针站（tokenharbor）是百分比，同样排除。
-      const UNIT_BY_SITE = { 'xiaomi-mimo': 'CNY', 'river': 'USD', 'longcat': 'Token', 'modelscope': '魔粒', 'xiaohuanxiong': '积分' };
+      const UNIT_BY_SITE = { 'xiaomi-mimo': 'CNY', 'river': 'USD', 'longcat': 'Token', 'modelscope': '魔粒' };
       const unit = UNIT_BY_SITE[site.id] || (hasTotal ? '' : '%');
       return json(res, 200, { quota: {
         total: hasTotal ? total : 100,
@@ -1150,44 +1127,6 @@ async function handleApi(req, res, url) {
       }
     }
 
-    // 办公小浣熊（issue #27）：积分余额 API 即探测；每日 00:00 自动发放（无签到动作端点），只读余额。
-    // ⚠ API 在裸域 xiaohuanxiong.com；401 + code 200001 = 会话失效。
-    let xhxSession = null;
-    let xhxBalance = null;
-    if (site.id === 'xiaohuanxiong') {
-      try {
-        const { fetchRaccoonBalance, fetchRaccoonIdentity } = await import('./xiaohuanxiongClient.js');
-        if (!cookie) {
-          logger.warn('COOKIE-SITE', '{name} 未读到会话 cookie', { name: site.name });
-          return json(res, 400, { error: '未读到办公小浣熊登录会话，请在登录窗完成登录后再关闭' });
-        }
-        const bal = await fetchRaccoonBalance(cookie);
-        if (!bal.ok) {
-          // 401 时区分两病因：收割里根本没 raccoon_token（SSO 异步写回没等到）vs token 无效
-          const hasToken = /(?:^|;\s*)raccoon_token=/.test(cookie);
-          const reason = (bal.status === 401 || bal.status === 403) && !hasToken
-            ? '收割的 cookie 里没有 raccoon_token（站点尚未写回登录凭据——请在站点内重新触发一次登录再关窗）'
-            : bal.error;
-          logger.warn('COOKIE-SITE', '{name} 积分余额探测被拒:{reason}', { name: site.name, reason });
-          return json(res, (bal.status === 401 || bal.status === 403) ? 401 : 502, {
-            error: (bal.status === 401 || bal.status === 403)
-              ? (hasToken ? '会话不可用，请重新登录该站点后再捕获（探测 401/403）' : reason)
-              : '探测站点失败：' + (bal.error || ''),
-          });
-        }
-        const ident = await fetchRaccoonIdentity(cookie).catch(() => null);
-        if (ident) xhxSession = ident;
-        xhxBalance = { amount: bal.balance, buckets: bal.buckets, at: now };
-        identity = ident?.email || ident?.name || ident?.id || null;
-        quotaSnapshot = { used: 0, total: bal.balance, isCreditBalance: true };
-        logger.info('COOKIE-SITE', '{name} 积分余额探测通过（{balance} 分，每日 {d} · 每月 {m} · 奖励 {r} · 加油包 {t}）', { name: site.name, balance: bal.balance, d: bal.buckets.daily, m: bal.buckets.monthly, r: bal.buckets.reward, t: bal.buckets.topup });
-        if (!identity) logger.warn('COOKIE-SITE', '{name} 身份未解析（user_info 无返回）', { name: site.name });
-      } catch (xhxErr) {
-        logger.warn('COOKIE-SITE', '{name} 积分余额抓取异常:{err}', { name: site.name, err: xhxErr.message });
-        return json(res, 502, { error: '探测站点失败：' + (xhxErr.message || '') });
-      }
-    }
-
     // LongCat（issue #29）：Token 资源包 summary API 即探测（美团 SSO cookie 直连，
     // 未登录 401「用户未登录」）。纯只读——包为购买/赠送发放，无签到动作端点。
     let lcPacks = null;
@@ -1227,7 +1166,7 @@ async function handleApi(req, res, url) {
       }
     }
 
-    const ih = identityHashOf(mimoUserId || riverSession?.user?.id || msSession?.id || xhxSession?.id || lcSession?.userId || identity);
+    const ih = identityHashOf(mimoUserId || riverSession?.user?.id || msSession?.id || lcSession?.userId || identity);
     const quotaMeta = quotaSnapshot ? { quotaSnapshot: { ...quotaSnapshot, at: now } } : {};
     const cred = riverSession ? riverSession.accessToken : cookie;   // 落盘的凭据主体
     const riverUid = riverSession?.user?.id || null;
@@ -1241,11 +1180,9 @@ async function handleApi(req, res, url) {
           ? `River AI (${identity || '会话'})`
           : (site.id === 'modelscope'
             ? `ModelScope (${identity || '会话'})`
-            : (site.id === 'xiaohuanxiong'
-              ? `办公小浣熊 (${identity || '会话'})`
-              : (site.id === 'longcat'
+            : (site.id === 'longcat'
                 ? `LongCat (${identity || '会话'})`
-                : (site.accountName + (identity ? `(${identity})` : ''))))));
+                : (site.accountName + (identity ? `(${identity})` : '')))));
       // 自动行名只在「没手改过且现名属自动名家族」时写入（meta.renamed + isAutoGeneratedName 双闸）
       const autoName = (row) => { if (canAutoRename(site, row)) row.name = accName; };
       if (hit) {
@@ -1266,8 +1203,6 @@ async function handleApi(req, res, url) {
           ...(riverSession ? { workosSession: riverSession, workosUser: riverSession.user || {} } : {}),
           ...(riverBalance ? { riverBalance } : {}),
           ...(msSession ? { msSession, msBalance } : {}),
-          ...(xhxSession ? { raccoonSession: xhxSession } : {}),
-          ...(xhxBalance ? { raccoonBalance: xhxBalance } : {}),
           ...(lcPacks ? { longcatPacks: longcatSnapshot(lcPacks) } : {}),
           ...(lcSession ? { longcatSession: lcSession } : {}),
         };
@@ -1291,8 +1226,6 @@ async function handleApi(req, res, url) {
             ...(riverSession ? { workosSession: riverSession, workosUser: riverSession.user || {} } : {}),
             ...(riverBalance ? { riverBalance } : {}),
           ...(msSession ? { msSession, msBalance } : {}),
-          ...(xhxSession ? { raccoonSession: xhxSession } : {}),
-          ...(xhxBalance ? { raccoonBalance: xhxBalance } : {}),
           ...(lcPacks ? { longcatPacks: longcatSnapshot(lcPacks) } : {}),
           ...(lcSession ? { longcatSession: lcSession } : {}),
           },
@@ -1323,9 +1256,6 @@ async function handleApi(req, res, url) {
             } else if (site.id === 'modelscope') {
               const { buildModelScopeQuotaPayload } = await import('./modelscopeClient.js');
               src = buildModelScopeQuotaPayload(target).source;
-            } else if (site.id === 'xiaohuanxiong') {
-              const { buildXhxQuotaPayload } = await import('./xiaohuanxiongClient.js');
-              src = buildXhxQuotaPayload(target).source;
             } else if (site.id === 'longcat') {
               const { buildLongcatQuotaPayload } = await import('./longcatClient.js');
               src = buildLongcatQuotaPayload(target).source;
@@ -1361,12 +1291,10 @@ async function handleApi(req, res, url) {
         const m = await import(
           site.id === 'xiaomi-mimo' ? './xiaomiMimoClient.js'
           : site.id === 'river' ? './riverClient.js'
-          : site.id === 'longcat' ? './longcatClient.js'
-          : site.id === 'xiaohuanxiong' ? './xiaohuanxiongClient.js' : './modelscopeClient.js');
+          : site.id === 'longcat' ? './longcatClient.js' : './modelscopeClient.js');
         const build = site.id === 'xiaomi-mimo' ? m.buildXiaomiMimoQuotaPayload
           : site.id === 'river' ? m.buildRiverQuotaPayload
-          : site.id === 'longcat' ? m.buildLongcatQuotaPayload
-          : site.id === 'xiaohuanxiong' ? m.buildXhxQuotaPayload : m.buildModelScopeQuotaPayload;
+          : site.id === 'longcat' ? m.buildLongcatQuotaPayload : m.buildModelScopeQuotaPayload;
         return build(a).source;
       } catch { return null; }
     };

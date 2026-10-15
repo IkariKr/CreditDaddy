@@ -556,7 +556,7 @@ async function openIncognitoWindow(url, { persistKey } = {}) {
   // 配置了出口代理时登录窗显式走它；未配置则保持默认（Electron 窗口本来就跟随系统代理，不覆盖）。
   // 登录窗与 daemon 探测同走「网络出口（全局）」——两边出口 IP 一致，避免窗内登录成功、
   // 探测被拒的错位（同一个站两种出口，一边通一边拒最难排查）。规则型代理（Clash 等）
-  // 对国内站点自动直连，不影响 MiMo / 小浣熊 / LongCat 等国内站登录。
+  // 对国内站点自动直连，不影响 MiMo / LongCat 等国内站登录。
   const cookieSite = cookieSitesLib && typeof cookieSitesLib.siteForLoginUrl === 'function' ? cookieSitesLib.siteForLoginUrl(url) : null;
   const isQoderUrl = /(:\/\/|\.)qoder\.(com|cn)(\/|$)/.test(url);
   if (isQoderUrl || cookieSite) {
@@ -752,7 +752,7 @@ async function harvestCookieSiteSession(ses, site) {
   // 全量 cookie（不过滤 URL）：带 Path 域的会话 cookie（如 /user_management 下的刷新 cookie）
   // 按 URL 过滤会被丢掉——2026-10-14 实测 river 刷新兑换「Missing refresh token」的根因之一
   const all = await ses.cookies.get({}).catch(() => []);
-  // 站点要求特定鉴权 cookie（如小浣熊 raccoon_token：SSO 回调后由 API 异步 set-cookie，
+  // 站点要求特定鉴权 cookie（site.authCookieName：SSO 回调后由 API 异步 set-cookie，
   // 关窗早一拍它还没落地——收割就是空的，daemon 打过去必 401「会话失效」）：
   // 轮询等它最多 8s（每 400ms 一查），等不到就按现状收割（daemon 侧会归为 401 + 日志点名）。
   const authCookieName = String(site.authCookieName || '');

@@ -1,7 +1,7 @@
 /**
  * LongCat（longcat.chat，美团）Token 资源包余额抓取（issue #29）。
  *
- * 形状与 xiaohuanxiong 同款：纯只读接入——资源包为购买/赠送发放，无签到动作端点。
+ * 纯只读接入——资源包为购买/赠送发放，无签到动作端点。
  * 凭据 = longcat.chat 会话 cookie（美团账号体系 SSO），打平台 API 走 cookie 直连
  * （fetch wrapper 只加 Content-Type + x-requested-with，无 Bearer/CSRF——2026-10-15
  * chunk 考古 + 登录态实测；未登录 401 `{"code":401,"msg":"用户未登录，请先登录"}`）。
