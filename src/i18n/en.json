@@ -1743,5 +1743,8 @@
   "捕获失败": "Capture failed",
   "捕获失败：": "Capture failed: ",
   "{kind} 网页会话收割上报失败：{note}": "{kind} web session harvest upload failed: {note}",
-  "cookie 收割上报失败：{err}": "cookie harvest upload failed: {err}"
+  "cookie 收割上报失败：{err}": "cookie harvest upload failed: {err}",
+  "（密钥被拒——壳与 daemon 版本或实例不一致？）": " (key rejected — desktop shell and daemon version/instance mismatch?)",
+  "（密钥被拒——壳与 daemon 实例不一致？）": " (key rejected — desktop shell and daemon instance mismatch?)",
+  "连接失败：": "Connection failed: "
 }
