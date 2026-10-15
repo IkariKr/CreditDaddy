@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+- 【待发】logger 运行时加固（6035938）未随 v1.5.0 发布——跨轮换的旧归档流挂了 error 兜底、新建的当前流漏挂：Windows 写盘异步 EBUSY/EPERM 时未捕获 error 事件会掀翻 daemon 进程（概率低但真实）。随下一批走 1.5.1：三处版本 bump + tag + npm publish。
+
 ---
 
 ## [1.5.0] (2026-10-15)
