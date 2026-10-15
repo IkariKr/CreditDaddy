@@ -2508,7 +2508,25 @@ function renderFreePool() {
       : '';
     const hint = site.hint ? '<div class="hint" style="margin:2px 0 6px">' + esc(T(site.hint)) + '</div>' : '';
 
+    const fmtBalanceText = (acc) => {
+      const v = acc.quota?.total
+        ?? acc.mimoBalance?.balance ?? acc.riverBalance?.balanceUsd
+        ?? acc.msBalance?.amount ?? acc.longcatPacks?.packs?.reduce((s2, p) => s2 + (Number(p.remaining) || 0), 0);
+      if (!Number.isFinite(v)) return '—';
+      if (site.id === 'xiaomi-mimo') return '¥ ' + Number(v).toFixed(2);
+      if (site.id === 'river') return '$ ' + Number(v).toFixed(2);
+      if (site.id === 'longcat') return Number(v).toLocaleString() + ' Token';
+      return Number(v).toFixed(0);
+    };
+
     const formatAccMetric = (acc) => {
+      // 死会话（lastProbe.status==='dead'）不挂余额胶囊——旧数字配红灯自相矛盾；
+      // 灰色状态标 + 原余额转 dim 小字存档（与推卡侧 auth 失效不回退快照同口径）。
+      const dead = acc.lastProbe && acc.lastProbe.ok === false && acc.lastProbe.status === 'dead';
+      if (dead) {
+        return '<span class="pill limited">' + T('会话失效，请重新登录捕获') + '</span>'
+          + '<span class="dim" style="font-size:11px;margin-left:6px">' + T('（上次读数 ') + fmtBalanceText(acc) + T('）') + '</span>';
+      }
       if (site.id === 'xiaomi-mimo') {
         const bal = acc.quota?.total ?? acc.mimoBalance?.balance;
         if (Number.isFinite(bal)) {
@@ -2724,6 +2742,15 @@ $('free-settings-push-now')?.addEventListener('click', async () => {
 async function cookieSiteCapture(siteId) {
   const site = (state.cookieSites || []).find((x) => x.id === siteId);
   if (!site || !window.creditdaddy || typeof window.creditdaddy.openAuthWindow !== 'function') return;
+  // 单会话站点（服务端同号新登录踢旧会话——MiMo 实测）：该站点已有捕获行时，
+  // 在窗里登出旧号换登新号会把旧号的会话作废——先知情确认再开窗。
+  const hasRows = (state.cookieSites || []).some((x) => x.id === siteId && (x.accounts || []).length);
+  if (hasRows && site.singleSession !== false) {
+    const ok = await uiConfirm(
+      T('该站点已有 {n} 个已捕获会话。部分站点（如小米 MiMo）同一账号只保留一个网页会话——在登录窗里切换账号会使旧账号的会话失效（面板行转红，余额数字保留存档）。确定继续？', { n: (state.cookieSites.find((x) => x.id === siteId).accounts || []).length }),
+      T('登录捕获'), T('继续'));
+    if (!ok) return;
+  }
   // cookie-site 站点走持久登录分区：本窗登录一次，下一轮捕获/重探复用会话（免二次登录，
   // 谷歌 SSO 场景免重复验证码）。「清除已存会话」可随时抹掉这份落盘会话。
   const r = await window.creditdaddy.openAuthWindow(site.loginUrl, { persistKey: 'cookie-site-' + siteId });

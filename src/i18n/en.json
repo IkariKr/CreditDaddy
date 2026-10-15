@@ -1714,5 +1714,9 @@
   "user-current 响应无 data": "user-current response has no data",
   "user-current 无身份字段": "user-current has no identity fields",
   " 个资源包）": " token packs)",
-  "Token 余额 ": "Token balance "
+  "Token 余额 ": "Token balance ",
+  "会话失效，请重新登录捕获": "Session expired — please sign in again to recapture",
+  "（上次读数 ": " (last reading ",
+  "该站点已有 {n} 个已捕获会话。部分站点（如小米 MiMo）同一账号只保留一个网页会话——在登录窗里切换账号会使旧账号的会话失效（面板行转红，余额数字保留存档）。确定继续？": "This site already has {n} captured sessions. Some sites (e.g. Xiaomi MiMo) keep only ONE web session per account — switching accounts in the login window will invalidate the old account's session (its row turns red; the balance figure is kept as an archive). Continue?",
+  "继续": "Continue"
 }
