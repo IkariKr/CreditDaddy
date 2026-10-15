@@ -319,6 +319,9 @@ test('网页会话账号「刷新积分」（/quota 端点）走重探语义：l
       assert.equal(q.status, 200, `quota 端点应 200，实际 ${q.status} ${JSON.stringify(q.body)}`);
       // tokenharbor = HTML 探针站：统一结构 total=100、remaining=100-used（55% 用了 → 45）
       assert.ok(q.body.quota && Number(q.body.quota.remaining) === 45, 'quota 统一结构（HTML 站 remaining=100-used）');
+      // HTML 探针站是百分比口径 → 带 unit='%' 回（面板 creditSum 按 unit 有无决定是否
+      // 计入「剩余积分」合计——Token/USD/魔粒等不同量纲永不与产品积分相加）
+      assert.equal(q.body.quota.unit, '%', 'HTML 站 quota 带 unit=%（排除出剩余积分合计）');
 
       const acc = JSON.parse(await fs.readFile(path.join(home, 'accounts.json'), 'utf8')).find((a) => a.id === accId);
       assert.equal(acc.meta.lastProbe?.ok, true, 'lastProbe 必须更新（呼吸灯才会转绿）');

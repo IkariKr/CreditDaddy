@@ -609,10 +609,16 @@ async function handleApi(req, res, url) {
       const total = Number(snap.total);
       const used = Number(snap.used) || 0;
       const hasTotal = Number.isFinite(total) && total > 0;
+      // 单位标注：各家余额单位互异（Token / USD / CNY / 魔粒 / 积分）且都不是「积分」
+      // 口径——带 unit 返回，面板 creditSum 按 unit 有无决定是否计入「剩余积分」合计
+      //（有单位 = 不同量纲，不相加）。HTML 探针站（tokenharbor）是百分比，同样排除。
+      const UNIT_BY_SITE = { 'xiaomi-mimo': 'CNY', 'river': 'USD', 'longcat': 'Token', 'modelscope': '魔粒', 'xiaohuanxiong': '积分' };
+      const unit = UNIT_BY_SITE[site.id] || (hasTotal ? '' : '%');
       return json(res, 200, { quota: {
         total: hasTotal ? total : 100,
         used,
         remaining: hasTotal ? total : Math.max(0, 100 - used),
+        ...(unit ? { unit } : {}),
         exceeded: false,
         parts: [],
       } });
