@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 - 【待发】logger 运行时加固（6035938）未随 v1.5.0 发布——跨轮换的旧归档流挂了 error 兜底、新建的当前流漏挂：Windows 写盘异步 EBUSY/EPERM 时未捕获 error 事件会掀翻 daemon 进程（概率低但真实）。随下一批走 1.5.1：三处版本 bump + tag + npm publish。
-- 【计划】彻底删除 WorkBuddy 国际版「活跃领取」线（用户指定下版本执行）：workbuddyClient 活跃探测/领取（checkinWorkbuddyIntl / no-activity 语义）、checkin 全局开关 wbActivity 与 daemon 设置项、面板「设置 → 通用」开关 UI、providers.js intl 分支、i18n 相关词条。⚠ 待定口径：intl 产品线本体（登录/用量查看）是否保留，还是整线连 minimax-intl 式一次性清理（daemon 删存量账号）一起做。
+- 【计划】彻底删除 WorkBuddy 国际版「活跃领取」线（用户指定下版本执行）：workbuddyClient 活跃探测/领取（checkinWorkbuddyIntl / no-activity 语义）、checkin 全局开关 wbActivity 与 daemon 设置项、面板「设置 → 通用」开关 UI、providers.js intl 分支、i18n 相关词条。口径已定（用户确认）：**只删「活跃领取」机制本体**，workbuddy-intl 产品线保留（workbuddy.ai 登录 / 用量查看照常），不动 constants PROVIDERS / tenrouterAccounts 映射 / transfer 别名 / authDevice 登录入口，无存量账号清理。
 
 ---
 
