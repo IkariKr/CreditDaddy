@@ -45,6 +45,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { logger, getLogs, readArchiveJsonl } from './logger.js';
 import {
@@ -139,6 +140,37 @@ const PANEL_FILE = path.join(__dirname, 'panel.html');
 const DEFAULT_PORT = 47860;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+/**
+ * Windows 系统保留端口段。WSL2 镜像网络模式会把一段端口圈进 Hyper-V 的
+ * excludedportrange（实测 47860~47870 落进去），bind 该段直接 EACCES（或 EADDRINUSE），
+ * 应用根本拿不到绑定权限。查询 netsh 拿到全量保留段供选端口避开。
+ * 非 Windows / 查询失败返回 []（退化为 +1 重试逃逸，见 bind）。
+ */
+function windowsExcludedTcpRanges() {
+  if (process.platform !== 'win32') return [];
+  try {
+    const out = execFileSync('netsh', ['interface', 'ipv4', 'show', 'excludedportrange', 'protocol=tcp'],
+      { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+    // 行形如「     47860      47870」；表头/分隔线无两列纯数字，自然跳过
+    return [...String(out).matchAll(/^\s*(\d+)\s+(\d+)\s*$/gm)].map((m) => [Number(m[1]), Number(m[2])]);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 从 start 起挑第一个不在系统保留段内的端口——确定性选择，避免每次启动漂到不同端口
+ * （10Router 网关节点 / 书签硬编码了端口，漂了就断）。netsh 不可用时原样返回 start，
+ * 交给 bind 的 +1 重试逃逸。ranges 可注入（测试用），默认查 netsh。
+ */
+export function pickBindablePort(start, ranges = windowsExcludedTcpRanges()) {
+  let p = Number(start) || DEFAULT_PORT;
+  for (let i = 0; i < 20000 && p <= 65535; i++, p++) {
+    if (!ranges.some(([a, b]) => p >= a && p <= b)) return p;
+  }
+  return Number(start) || DEFAULT_PORT;
+}
 
 // Qoder 当前登录缓存：面板 30s 一轮 status，DPAPI 解密结果没必要每轮重算
 let qoderCurCache = { at: 0, data: null };
@@ -1882,16 +1914,27 @@ export async function startDaemon(port = DEFAULT_PORT, host = '127.0.0.1') {
   });
 
   return new Promise((resolve, reject) => {
+    const startPort = pickBindablePort(Number(port) || DEFAULT_PORT);
     let attempts = 0;
+    let triedFallback = false;
     const bind = (p) => {
       // 失败重试时必须摘掉上一次的 listening 监听，否则成功后会重复触发
       const onError = (err) => {
         server.off('listening', onListening);
-        if (err && err.code === 'EADDRINUSE' && attempts < 10) {
+        const code = err && err.code;
+        // EACCES = 落进系统保留段（WSL2 镜像网络 / Hyper-V excludedportrange），EADDRINUSE = 被别的进程占
+        const blocked = code === 'EADDRINUSE' || code === 'EACCES';
+        if (blocked && attempts < 100 && !triedFallback) {
           attempts += 1;
-          logger.warn('DAEMON', '端口 {port} 被占用,改试 {next}', { port: p, next: p + 1 });
+          logger.warn('DAEMON', '端口 {port} 不可用（{code}），改试 {next}', { port: p, code: code || '未知', next: p + 1 });
           server.close();
-          setTimeout(() => bind(p + 1), 300);
+          setTimeout(() => bind(p + 1), 30);
+        } else if (blocked && !triedFallback) {
+          // 起始端口起整段都不可用（保留段异常大）：回退 OS 随机空闲端口，端口记进 daemon.json
+          triedFallback = true;
+          logger.warn('DAEMON', '端口 {start}~{end} 均不可用，回退系统随机空闲端口', { start: startPort, end: p });
+          server.close();
+          setTimeout(() => bind(0), 30);
         } else {
           // 兜底失败必须 reject：否则这个 promise 永远挂着，调用方的 startScheduler() 不会跑，
           // 进程既不监听也不退出，只在日志里留一行，看起来像「启动了但没反应」
@@ -1913,6 +1956,6 @@ export async function startDaemon(port = DEFAULT_PORT, host = '127.0.0.1') {
       server.once('listening', onListening);
       server.listen(p, host);
     };
-    bind(Number(port) || DEFAULT_PORT);
+    bind(startPort);
   });
 }

@@ -11,7 +11,7 @@ import net from 'node:net';
 
 process.env.CREDITDADDY_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'creditdaddy-listen-'));
 
-const { startDaemon } = await import('../src/daemon.js');
+const { startDaemon, pickBindablePort } = await import('../src/daemon.js');
 const { closeArchiveStream } = await import('../src/logger.js');
 
 /** 203.0.113.0/24 是 RFC 5737 保留的文档用网段，任何机器上都不会被分配 */
@@ -63,6 +63,16 @@ test('端口被占用时仍能自动顺延到下一个可用端口', async () =>
   } finally {
     opened.close();
   }
+});
+
+test('pickBindablePort：跳过系统保留段（WSL2 镜像网络把 47860~47870 圈走时选 47871）', () => {
+  // WSL2 镜像网络模式的 Hyper-V excludedportrange 会圈走一段端口，bind 落进去直接 EACCES
+  assert.equal(pickBindablePort(47860, [[47860, 47870]]), 47871, '保留段 47860~47870 应跳到 47871');
+  assert.equal(pickBindablePort(47860, []), 47860, '无保留段时原样返回起始端口（稳定，不漂）');
+  assert.equal(pickBindablePort(47860, [[47850, 47859]]), 47860, '保留段在起始端口之前不影响');
+  assert.equal(pickBindablePort(47860, [[47860, 47860], [47862, 47862]]), 47861, '逐段跳过，取第一个空口');
+  assert.equal(pickBindablePort(47860, [[47860, 50000]]), 50001, '超大保留段也能逃出');
+  assert.equal(pickBindablePort(0, []), 47860, 'start=0 回退 DEFAULT_PORT（0 不是合法目标）');
 });
 
 test('ZCode 网关数据面路由：规范路径 /gateway/zcode/v1/messages 与旧别名都命中（405 而非 404）', async () => {

@@ -6,6 +6,7 @@
 
 ## [Unreleased]
 
+- **WSL2 镜像网络端口冲突修复**：WSL2 镜像网络模式把一段端口圈进 Hyper-V `excludedportrange`（实测 47860~47870 落进去），Windows 端 bind 直接 EACCES——应用根本拿不到绑定权限，daemon 起不来。改为启动时用 `netsh` 查系统保留段、从 47860 起挑第一个空闲端口（确定性选择，不漂移，10Router 网关节点 / 书签硬编码端口不断）；bind 重试同时认 EACCES + EADDRINUSE（原来只认后者，落保留段直接放弃）、窗口 10→100 逃出大保留块、整段不可用时回退 OS 随机空闲端口（端口记进 daemon.json）。netsh 不可用时退化为 +1 重试，跨平台不受影响。
 - **网页会话探测频率治理**：面板 2 分钟自动轮询曾把五家上游（Token Harbor / 小米 MiMo / River / ModelScope / LongCat）全量 live 轰一遍（日志「就地重探通过」刷屏）。改为 `/api/accounts/:id/quota` 默认读缓存快照零网络，仅 `?live=1`（手动「刷新积分」按钮）才真探上游并回填快照；后台推送循环（默认 60 分钟）live 拉到的余额顺手落库 `meta.quotaSnapshot` 保鲜缓存。上游实际探测频率从「面板开着每 2 分钟」降到「后台每 60 分钟 + 手动」，面板显示与呼吸灯不变。
 - **WorkBuddy 临时活动批量领取（额外补偿 / 首月赠礼）**：新增 `POST /api/workbuddy/claim-activities` 用已存 Bearer 凭据批量领取（先查状态、只对 active && !claimed 的发领取请求，幂等多号安全），面板 WorkBuddy 页新增「领取活动」按钮一键领全部账号——免逐个网页点击。端点事实源 = usercenter bundle（`/billing/meter/compensation-status` / `claim-compensation` / `check-gift-claimed` / `claim-gift`），实测 Keycloak Bearer 直接可用（无需网页会话 cookie）。附 `GET /api/workbuddy/activities` 预览可领项。
 - 【待发】logger 运行时加固（6035938）未随 v1.5.0 发布——跨轮换的旧归档流挂了 error 兜底、新建的当前流漏挂：Windows 写盘异步 EBUSY/EPERM 时未捕获 error 事件会掀翻 daemon 进程（概率低但真实）。随下一批走 1.5.1：三处版本 bump + tag + npm publish。

@@ -18,6 +18,20 @@ const eq = await import('../src/externalQuota.js');
 
 const DAY = 86_400_000;
 
+// probeMark/persistLive 走 withAccounts 串行队列 fire-and-forget 写盘，调用方不 await。
+// 固定 sleep 在高负载下偶发不够（CI 跑全套时尤其），改成轮询等目标字段落库，超时再断言。
+async function untilMeta(home, id, pred, timeoutMs = 3000) {
+  const file = path.join(home, 'accounts.json');
+  const t0 = Date.now();
+  for (;;) {
+    let acc = null;
+    try { acc = JSON.parse(fs.readFileSync(file, 'utf8')).find((a) => a.id === id); } catch {}
+    if (acc && pred(acc)) return acc;
+    if (Date.now() - t0 >= timeoutMs) return acc;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 test('parseTokenHarborQuota：百分比 + Resets in 读数', () => {
   const html = '<div>Free allowance <span>80% used</span><em>Resets in 5d 4h 30m</em></div>';
   const q = parseTokenHarborQuota(html);
@@ -218,14 +232,13 @@ test('自愈①：后台推送的 live 结果回写 lastProbe（呼吸灯有后�
     // probeMark 走 withAccounts 队列按 id 查库回写——账号必须先在库里
     await store.withAccounts((list) => { list.push({ ...acc, meta: { ...acc.meta } }); });
     await eq.runQuotaPush({ endpoint: 'http://x', key: 'sk', accounts: [acc], fetchImpl: dead401 });
-    // withAccounts 串行队列排空
-    await new Promise((r) => setTimeout(r, 60));
-    const saved1 = JSON.parse(fs.readFileSync(path.join(HOME2, 'accounts.json'), 'utf8')).find((a) => a.id === 'probe-1');
+    // withAccounts 串行队列排空（轮询等 lastProbe 落库）
+    const saved1 = await untilMeta(HOME2, 'probe-1', (a) => a.meta.lastProbe != null);
     assert.equal(saved1.meta.lastProbe?.ok, false, '401 后台推送必须回写 lastProbe');
     assert.equal(saved1.meta.lastProbe?.status, 'dead', '401 归 dead（呼吸灯转红）');
     // noProbeMark：回调路径不写
     await eq.runQuotaPush({ endpoint: 'http://x', key: 'sk', accounts: [acc], fetchImpl: dead401, noProbeMark: true });
-    await new Promise((r) => setTimeout(r, 60));
+    await new Promise((r) => setTimeout(r, 60));   // 给「若会写」一个窗口，再断言没被覆盖
     const saved2 = JSON.parse(fs.readFileSync(path.join(HOME2, 'accounts.json'), 'utf8')).find((a) => a.id === 'probe-1');
     assert.equal(saved2.meta.lastProbe.status, 'dead', 'noProbeMark 不得覆盖');
   } finally {
@@ -249,8 +262,7 @@ test('自愈①b：后台推送 live 余额落库 quotaSnapshot（面板 /quota 
     const acc = { id: 'persist-1', provider: 'xiaomi-mimo', name: 'm', token: 'c=1', uid: '6786673', meta: { cookieSiteId: 'xiaomi-mimo', userId: '6786673', quotaSnapshot: { used: 0, total: 0, isCreditBalance: true, at: new Date(Date.now() - 86_400_000).toISOString() } } };
     await store.withAccounts((list) => { list.push({ ...acc, meta: { ...acc.meta } }); });
     await eq.runQuotaPush({ endpoint: 'http://x', key: 'sk', accounts: [acc], fetchImpl: liveOk });
-    await new Promise((r) => setTimeout(r, 60));
-    const savedAcc = JSON.parse(fs.readFileSync(path.join(HOME3, 'accounts.json'), 'utf8')).find((a) => a.id === 'persist-1');
+    const savedAcc = await untilMeta(HOME3, 'persist-1', (a) => a.meta.quotaSnapshot?.total === 16.36);
     assert.equal(savedAcc.meta.quotaSnapshot?.total, 16.36, 'live 余额必须落库 quotaSnapshot（缓存路径数据源）');
     assert.equal(savedAcc.meta.quotaSnapshot?.isCreditBalance, true);
     assert.equal(savedAcc.meta.mimoBalance?.balance, 16.36, '各家明细字段同步落库');

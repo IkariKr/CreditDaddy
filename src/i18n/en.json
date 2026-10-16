@@ -570,7 +570,6 @@
   "读取本机妙手（美团 CatPaw）客户端当前登录的账号（本地解密 %APPDATA%\\catpaw-moon\\catx-credential.json），token 不出本机。": "Reads the account currently signed in to the local CatPaw (Meituan CatPaw) client (decrypted locally from %APPDATA%\\catpaw-moon\\catx-credential.json); tokens never leave this machine.",
   "读取可领取的活动...": "Reading claimable activities...",
   "读取失败": "Read failed",
-  "端口 {port} 被占用,改试 {next}": "Port {port} is in use, trying {next}",
   "端口 {port} 迟迟没有释放,进程可能仍在收尾": "Port {port} has not been released yet; the process may still be shutting down",
   "断开": "Disconnect",
   "断开 10Router": "Disconnect 10Router",
@@ -1748,5 +1747,8 @@
   "领取成功 {n} 项，+{amt} 积分": "Claimed {n} items, +{amt} credits",
   "（{n} 项已领）": " ({n} already claimed)",
   "（{n} 项失败）": " ({n} failed)",
-  "已领 {n} 项，无可领活动": "{n} already claimed, nothing to claim"
+  "已领 {n} 项，无可领活动": "{n} already claimed, nothing to claim",
+  "端口 {port} 不可用（{code}），改试 {next}": "Port {port} unavailable ({code}), trying {next}",
+  "未知": "unknown",
+  "端口 {start}~{end} 均不可用，回退系统随机空闲端口": "Ports {start}~{end} all unavailable, falling back to a random free system port"
 }
