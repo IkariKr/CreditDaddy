@@ -615,6 +615,9 @@
             <button class="btn" id="mt-gw"></button>
             <button class="btn" id="mt-open" style="display:none"></button>
           </span>
+          <span id="w-actions" style="display:none">
+            <button class="btn" id="wt-act" title="领取临时活动（额外补偿 / 首月赠礼），用已存凭据批量领，免逐个网页点击"></button>
+          </span>
           <button class="btn" id="btn-add"></button>
           <button class="btn" id="btn-import"></button>
           <button class="btn" id="btn-export"></button>
@@ -1717,6 +1720,7 @@ function render() {
   $('z-actions').style.display = 'none';   // 兜底：切到仪表盘 / 10Router / 免费额度池 时 renderProd 不跑，先藏起来
   $('t-actions').style.display = 'none';
   $('m-actions').style.display = 'none';
+  $('w-actions').style.display = 'none';
   for (const p of PRODUCTS) $('cnt-' + p.id).textContent = ofProduct(p.id).length;
   $('cnt-tenrouter').textContent = tr.quotas ? tr.quotas.connections.length : tr.config && tr.config.configured ? '…' : '–';
   const freeAccounts = (state.cookieSites || []).reduce((n, s) => n + (s.accounts ? s.accounts.length : 0), 0);
@@ -1815,6 +1819,11 @@ function renderProd() {
       $('mt-open').innerHTML = dot(mc.running === true, true) + T('打开客户端');
       $('mt-open').title = mc.running ? T('MiniMax Code 客户端运行中，点我唤到前台') : T('MiniMax Code 客户端未运行，点我启动');
     }
+  }
+  // WorkBuddy 临时活动（额外补偿 / 首月赠礼）批量领取入口——用已存凭据，免逐个网页点击
+  $('w-actions').style.display = prod === 'workbuddy' ? 'contents' : 'none';
+  if (prod === 'workbuddy') {
+    $('wt-act').innerHTML = I.gift + T('领取活动');
   }
 }
 
@@ -3057,7 +3066,8 @@ async function refreshAccountList() {
 }
 let quotaRun = 0;
 let quotaLoadedAt = 0;
-async function loadQuotas(ids) {
+async function loadQuotas(ids, opts) {
+  const live = !!(opts && opts.live);
   const run = ++quotaRun;
   quotaLoadedAt = Date.now();
   const queue = (ids || state.accounts.map((a) => a.id)).slice();
@@ -3065,7 +3075,7 @@ async function loadQuotas(ids) {
   const worker = async () => {
     while (queue.length && run === quotaRun) {
       const id = queue.shift();
-      try { state.quotas[id] = (await api('/api/accounts/' + encodeURIComponent(id) + '/quota')).quota; }
+      try { state.quotas[id] = (await api('/api/accounts/' + encodeURIComponent(id) + '/quota' + (live ? '?live=1' : ''))).quota; }
       catch (e) { state.quotas[id] = { error: e.message }; }
       render();
     }
@@ -3166,6 +3176,22 @@ async function checkinAll(btn, product) {
   btn.disabled = false; btn.innerHTML = label;
   await loadStatus(); await loadAccounts(); loadLogs();
 }
+// WorkBuddy 临时活动批量领取：用已存 Bearer 凭据领「额外补偿 / 首月赠礼」，免逐个网页点击
+async function claimWbActivities(btn) {
+  const label = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = I.refresh + T('领取中…');
+  try {
+    const d = await api('/api/workbuddy/claim-activities', { method: 'POST', json: {} });
+    const s = d.summary || {};
+    const claimed = (d.results || []).flatMap((r) => r.claimed || []).filter((x) => x.status === 'checked-in');
+    const amount = claimed.reduce((sum, x) => sum + (Number(x.claimedAmount) || 0), 0);
+    if (s.total === 0) toast(T('没有可领取的临时活动（都领过或未开启）'));
+    else if (s.claimed > 0) toast(T('领取成功 {n} 项，+{amt} 积分', { n: s.claimed, amt: amount }) + (s.already ? T('（{n} 项已领）', { n: s.already }) : '') + (s.failed ? T('（{n} 项失败）', { n: s.failed }) : ''));
+    else toast(T('已领 {n} 项，无可领活动', { n: s.already }) + (s.failed ? T('（{n} 项失败）', { n: s.failed }) : ''), !s.failed);
+  } catch (e) { toast(e.message, false); }
+  btn.disabled = false; btn.innerHTML = label;
+  await loadStatus(); await loadAccounts(); loadLogs();
+}
 async function onCardClick(e) {
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
@@ -3182,7 +3208,7 @@ async function onCardClick(e) {
     if ([...sel.options].some((o) => o.value === a.provider && !o.hidden)) sel.value = a.provider;
     return deviceLogin();
   }
-  if (act === 'quota') { loadQuotas([id]); return; }
+  if (act === 'quota') { loadQuotas([id], { live: true }); return; }
   if (act === 'claim') return openClaim(id);
   if (act === 'switch') {
     const a = state.accounts.find((x) => x.id === id);
@@ -4391,6 +4417,7 @@ for (const id of ['btn-import', 'btn-import-dash']) { $(id).innerHTML = I.upload
 for (const id of ['btn-export', 'btn-export-dash']) $(id).innerHTML = I.download + T('导出');
 $('btn-checkin-all').onclick = () => checkinAll($('btn-checkin-all'));
 $('btn-checkin').onclick = () => checkinAll($('btn-checkin'), state.view);
+$('wt-act').onclick = () => claimWbActivities($('wt-act'));
 $('btn-add-dash').onclick = () => openAdd('');
 $('btn-add').onclick = () => openAdd(state.view);
 $('btn-export-dash').onclick = () => { $('ex-provider').value = ''; refreshExportNote(); openModal('m-export'); };

@@ -215,6 +215,16 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
       if (hit) hit.meta = { ...(hit.meta || {}), lastProbe: { ok: Boolean(ok), status, error: ok ? null : String(error || '').slice(0, 200), at: new Date().toISOString() } };
     })).catch(() => {});
   };
+  // live 余额落库（面板 /quota 缓存路径的数据源）：推送循环每轮 live 拉到的数字顺手写回
+  // meta.quotaSnapshot + 各家明细字段，缓存随推送节奏（默认 60 分钟）保鲜。无条件落盘——
+  // 回调路径（quota-refresh → onlySource）拿的也是真数据，没理由只落 lastProbe 不落数字。
+  const persistLive = (a, patch) => {
+    if (!a?.id || !patch) return;
+    import('./store.js').then(({ withAccounts }) => withAccounts((list) => {
+      const hit = list.find((x) => x.id === a.id);
+      if (hit) hit.meta = { ...(hit.meta || {}), ...patch };
+    })).catch(() => {});
+  };
   const deadSkip = (a) => {
     const lp = a.meta?.lastProbe;
     if (!lp || lp.ok || lp.status !== 'dead') return false;
@@ -256,8 +266,13 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
         const uid = a.meta?.userId || a.uid || '';
         try {
           const b = await fetchXiaomiMimoBalance(a.token, uid, { fetchImpl });
-          if (b.ok) liveData = { balance: b.balance, cash: b.cash, voucher: b.voucher };
-          else liveData = liveError(b);
+          if (b.ok) {
+            liveData = { balance: b.balance, cash: b.cash, voucher: b.voucher };
+            persistLive(a, {
+              mimoBalance: { balance: b.balance, cash: b.cash, voucher: b.voucher, at: new Date().toISOString() },
+              quotaSnapshot: { used: 0, total: b.balance, isCreditBalance: true, at: new Date().toISOString() },
+            });
+          } else liveData = liveError(b);
           probeMark(a, b.ok, b.error);
         } catch (err) {
           liveData = { error: err.message };
@@ -293,8 +308,13 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
       } else {
         try {
           const b = await fetchRiverBalance(a, { fetchImpl });
-          if (b.ok) liveData = { balance: b.balance };
-          else liveData = liveError(b);
+          if (b.ok) {
+            liveData = { balance: b.balance };
+            persistLive(a, {
+              riverBalance: { balanceUsd: b.balance, at: new Date().toISOString() },
+              quotaSnapshot: { used: 0, total: b.balance, isCreditBalance: true, at: new Date().toISOString() },
+            });
+          } else liveData = liveError(b);
           probeMark(a, b.ok, b.error);
         } catch (err) {
           liveData = { error: err.message };
@@ -334,6 +354,10 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
             const ledger = await fetchMagicubeLedger(a.token, b.balance, { fetchImpl }).catch(() => null);
             liveData = { balance: b.balance, ledger };
             probeMark(a, true);
+            persistLive(a, {
+              msBalance: { amount: b.balance, today: ledger?.today ?? null, long: ledger?.long ?? null, at: new Date().toISOString() },
+              quotaSnapshot: { used: 0, total: b.balance, isCreditBalance: true, at: new Date().toISOString() },
+            });
           } else {
             liveData = liveError(b);
             probeMark(a, false, b.error);
@@ -360,7 +384,7 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
   //    储值卡 + 逐包明细（消耗顺序官方规则：购买包未动时先烧赠送包），会话失效降级 message 状态卡。
   const lcAccounts = (accounts || []).filter((a) => (a.provider === 'longcat' || a.meta?.cookieSiteId === 'longcat') && a.token);
   if (lcAccounts.length) {
-    const { fetchLongcatPacks, buildLongcatQuotaPayload } = await import('./longcatClient.js');
+    const { fetchLongcatPacks, longcatSnapshot, buildLongcatQuotaPayload } = await import('./longcatClient.js');
     for (const a of lcAccounts) {
       // onlySource 先判：别路 source 不打 LongCat 上游
       const { source } = buildLongcatQuotaPayload(a);
@@ -372,8 +396,14 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
       } else {
         try {
           const b = await fetchLongcatPacks(a.token, { fetchImpl });
-          if (b.ok) liveData = { packs: b.packs };
-          else liveData = liveError(b);
+          if (b.ok) {
+            liveData = { packs: b.packs };
+            const lcTotal = b.packs.reduce((s, p) => s + Math.max(0, Number(p.remaining) || 0), 0);
+            persistLive(a, {
+              longcatPacks: longcatSnapshot(b.packs),
+              quotaSnapshot: { used: 0, total: lcTotal, isCreditBalance: true, at: new Date().toISOString() },
+            });
+          } else liveData = liveError(b);
           probeMark(a, b.ok, b.error);
         } catch (err) {
           liveData = { error: err.message };

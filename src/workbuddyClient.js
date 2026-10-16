@@ -321,3 +321,90 @@ export async function fetchWorkbuddyQuota(account, { onRefresh } = {}) {
   const sum = (k) => Math.round(parts.reduce((s, p) => s + p[k], 0) * 100) / 100;
   return { total: sum('total'), used: sum('used'), remaining: sum('remaining'), parts, exceeded: false };
 }
+
+// ─── Web 临时活动领取（额外补偿 / 首月赠礼）───
+// 网页 usercenter 的活动端点（无 /v2 前缀，与桌面 /v2/billing/meter/* 并存于同一 APISIX 网关）。
+// 事实源 = usercenter bundle（index-D7kQlGMt.js）：cn.post("/billing/meter/compensation-status")
+// / claim-compensation / check-gift-claimed / claim-gift；响应信封 { code, msg, data }。
+// 实测 CD 存的 Keycloak Bearer JWT 直接可用（无需网页会话 cookie）——批量领取免逐个网页点击。
+const WB_WEB_ACT = {
+  compensation: { label: '额外补偿', statusPath: '/billing/meter/compensation-status', claimPath: '/billing/meter/claim-compensation' },
+  gift: { label: '首月赠礼', statusPath: '/billing/meter/check-gift-claimed', claimPath: '/billing/meter/claim-gift' },
+};
+export const WB_ACTIVITY_KINDS = Object.keys(WB_WEB_ACT);
+
+async function postWeb(account, path, token) {
+  // fetchJsonRace 统一出口：连接段限时 + 配置了出口代理时直连/代理双路兜底
+  const res = await fetchJsonRace(`https://${apiHost(account)}${path}`, {
+    method: 'POST',
+    headers: { ...headersFor(account, token), 'X-Client-Platform': 'web' },
+    body: '{}',
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+  const text = await res.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch {}
+  return { status: res.status, body, text };
+}
+
+/**
+ * 查某账号的临时活动状态（补偿 + 赠礼）。返回逐项 { kind, label, active, claimed, creditNum, endTime, claimable }。
+ * fail-soft：单项失败不阻断其余项，error 字段带原因。
+ */
+export async function fetchWbActivities(account, { onRefresh } = {}) {
+  const out = [];
+  for (const [kind, spec] of Object.entries(WB_WEB_ACT)) {
+    try {
+      const r = await withToken(account, (t) => postWeb(account, spec.statusPath, t), onRefresh);
+      if (r.status === 401 || r.status === 403) { out.push({ kind, label: spec.label, error: `鉴权失败（HTTP ${r.status}），token 已失效` }); continue; }
+      if (r.status !== 200 || r.body?.code !== 0) { out.push({ kind, label: spec.label, error: r.body?.msg || `状态查询失败：HTTP ${r.status}` }); continue; }
+      const d = r.body.data || {};
+      const active = Boolean(d.active);
+      const claimed = Boolean(d.claimed);
+      out.push({
+        kind, label: spec.label,
+        active, claimed,
+        creditNum: Number(d.credit_num) || 0,
+        endTime: d.end_time || null,
+        claimable: active && !claimed,
+      });
+    } catch (e) {
+      out.push({ kind, label: spec.label, error: e?.message || '网络错误' });
+    }
+  }
+  return out;
+}
+
+/**
+ * 领取某临时活动（幂等：先查状态，未领且 active 才真领）。返回与签到一致的结果对象
+ * （status: checked-in / already / no-activity / failed，claimedAmount = 积分数）。
+ */
+export async function claimWbActivity(account, kind, { onRefresh } = {}) {
+  const spec = WB_WEB_ACT[kind];
+  const label = account.name || account.id;
+  const base = { accountId: account.id, account: label, provider: account.provider, kind, activityLabel: spec?.label || kind };
+  if (!spec) return { ...base, status: 'failed', error: `未知活动 ${kind}` };
+  try {
+    // 1) 先查状态：已领 / 未激活则不发领取请求（幂等，多号批量也安全）
+    const st = await withToken(account, (t) => postWeb(account, spec.statusPath, t), onRefresh);
+    if (st.status === 401 || st.status === 403) return { ...base, status: 'failed', error: `鉴权失败（HTTP ${st.status}），token 已失效` };
+    if (st.status !== 200 || st.body?.code !== 0) return { ...base, status: 'failed', error: st.body?.msg || `状态查询失败：HTTP ${st.status}` };
+    const d = st.body.data || {};
+    const creditNum = Number(d.credit_num) || 0;
+    if (!d.active) return { ...base, status: 'no-activity', message: `${spec.label}：活动未开启`, claimedAmount: 0 };
+    if (d.claimed) return { ...base, status: 'already', message: `${spec.label}：已领取`, claimedAmount: creditNum };
+
+    // 2) 领取
+    const r = await withToken(account, (t) => postWeb(account, spec.claimPath, t), onRefresh);
+    if (r.status === 401 || r.status === 403) return { ...base, status: 'failed', error: `鉴权失败（HTTP ${r.status}），token 已失效` };
+    const code = r.body?.code ?? r.body?.error_code;
+    const msg = r.body?.msg ?? r.body?.message ?? '';
+    if (r.status >= 200 && r.status < 300 && (code === 0 || code === undefined)) {
+      return { ...base, status: 'checked-in', claimedAmount: creditNum, message: `${spec.label}领取成功` };
+    }
+    if (/已领取|already|repeat|重复/i.test(msg)) return { ...base, status: 'already', message: `${spec.label}：${msg}`, claimedAmount: 0 };
+    return { ...base, status: 'failed', error: `${spec.label}领取失败：HTTP ${r.status} ${msg || r.text.slice(0, 120)}`.trim() };
+  } catch (e) {
+    return { ...base, status: 'failed', error: e?.message || '网络错误' };
+  }
+}

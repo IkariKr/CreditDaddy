@@ -1739,5 +1739,14 @@
   "小米 MiMo 控制台余额": "Xiaomi MiMo Console Balance",
   "ModelScope 魔方余额": "ModelScope Magicube balance",
   "River AI 免费额度": "River AI Free Credit",
-  "LongCat Token 资源包": "LongCat token packs"
+  "LongCat Token 资源包": "LongCat token packs",
+  "额外补偿": "Bonus Compensation",
+  "首月赠礼": "First-Month Gift",
+  "领取临时活动（额外补偿 / 首月赠礼），用已存凭据批量领，免逐个网页点击": "Claim temporary activities (bonus compensation / first-month gift) in bulk with saved credentials — no clicking one by one on the web",
+  "领取活动": "Claim Activities",
+  "没有可领取的临时活动（都领过或未开启）": "No claimable temporary activities (all claimed or not started)",
+  "领取成功 {n} 项，+{amt} 积分": "Claimed {n} items, +{amt} credits",
+  "（{n} 项已领）": " ({n} already claimed)",
+  "（{n} 项失败）": " ({n} failed)",
+  "已领 {n} 项，无可领活动": "{n} already claimed, nothing to claim"
 }

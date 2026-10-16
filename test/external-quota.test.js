@@ -234,6 +234,34 @@ test('自愈①：后台推送的 live 结果回写 lastProbe（呼吸灯有后�
   }
 });
 
+test('自愈①b：后台推送 live 余额落库 quotaSnapshot（面板 /quota 缓存路径的数据源）', async () => {
+  const HOME3 = fs.mkdtempSync(path.join(os.tmpdir(), 'ext-quota-persist-'));
+  const saved = process.env.CREDITDADDY_HOME;
+  process.env.CREDITDADDY_HOME = HOME3;
+  try {
+    const store = await import('../src/store.js');
+    const liveOk = async (url, init) => {
+      const u = String(url);
+      if (u.includes('/api/external-quota/')) return { ok: true, status: 200, json: async () => ({ ok: true, entries: 1 }) };
+      if (u.includes('/api/v1/balance')) return { ok: true, status: 200, text: async () => JSON.stringify({ data: { balance: 16.36, cashBalance: 10.5, giftBalance: 5.86 } }) };
+      return { ok: true, status: 200, text: async () => '{}', json: async () => ({}) };
+    };
+    const acc = { id: 'persist-1', provider: 'xiaomi-mimo', name: 'm', token: 'c=1', uid: '6786673', meta: { cookieSiteId: 'xiaomi-mimo', userId: '6786673', quotaSnapshot: { used: 0, total: 0, isCreditBalance: true, at: new Date(Date.now() - 86_400_000).toISOString() } } };
+    await store.withAccounts((list) => { list.push({ ...acc, meta: { ...acc.meta } }); });
+    await eq.runQuotaPush({ endpoint: 'http://x', key: 'sk', accounts: [acc], fetchImpl: liveOk });
+    await new Promise((r) => setTimeout(r, 60));
+    const savedAcc = JSON.parse(fs.readFileSync(path.join(HOME3, 'accounts.json'), 'utf8')).find((a) => a.id === 'persist-1');
+    assert.equal(savedAcc.meta.quotaSnapshot?.total, 16.36, 'live 余额必须落库 quotaSnapshot（缓存路径数据源）');
+    assert.equal(savedAcc.meta.quotaSnapshot?.isCreditBalance, true);
+    assert.equal(savedAcc.meta.mimoBalance?.balance, 16.36, '各家明细字段同步落库');
+    assert.equal(savedAcc.meta.mimoBalance?.cash, 10.5);
+    assert.ok(savedAcc.meta.quotaSnapshot?.at, 'at 时间戳更新（缓存保鲜判据）');
+  } finally {
+    process.env.CREDITDADDY_HOME = saved;
+    fs.rmSync(HOME3, { recursive: true, force: true });
+  }
+});
+
 test('自愈②：dead 账号 6h 内跳过 live 拉取（照常推状态卡），单卡回调不跳过', async () => {
   const now = Date.now();
   const deadAcc = { id: 'd1', provider: 'xiaomi-mimo', name: 'm', token: 'c=1', uid: '6786673', meta: { cookieSiteId: 'xiaomi-mimo', userId: '6786673', lastProbe: { ok: false, status: 'dead', error: '会话失效（HTTP 401）', at: new Date(now - 3600_000).toISOString() } } };

@@ -566,6 +566,55 @@ async function handleApi(req, res, url) {
     return json(res, 200, { results, summary });
   }
 
+  // ── WorkBuddy 临时活动（额外补偿 / 首月赠礼）──
+  // 用已存 Bearer 凭据批量领取，免逐个网页点击。GET 预览可领项，POST 批量领。
+  // body 可选 { accountIds: [], kinds: [] } 过滤；默认扫全部 workbuddy 账号 × 全部活动。
+  if (p === '/api/workbuddy/activities' && method === 'GET') {
+    const accounts = await loadAccounts();
+    const targets = accounts.filter((a) => String(a.provider).startsWith('workbuddy'));
+    const { fetchWbActivities } = await import('./workbuddyClient.js');
+    const results = [];
+    for (const a of targets) {
+      const acts = await fetchWbActivities(a).catch((e) => [{ error: e.message }]);
+      results.push({ accountId: a.id, name: a.name || a.id, provider: a.provider, activities: acts });
+    }
+    return json(res, 200, { results });
+  }
+  if (p === '/api/workbuddy/claim-activities' && method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    const onlyIds = Array.isArray(body?.accountIds) && body.accountIds.length ? new Set(body.accountIds) : null;
+    const onlyKinds = Array.isArray(body?.kinds) && body.kinds.length ? body.kinds : null;
+    const accounts = await loadAccounts();
+    const targets = accounts.filter((a) => String(a.provider).startsWith('workbuddy') && (!onlyIds || onlyIds.has(a.id)));
+    const { claimWbActivity, fetchWbActivities } = await import('./workbuddyClient.js');
+    const results = [];
+    for (const a of targets) {
+      // 先查可领项，只对 active && !claimed 的发领取请求（幂等，多号批量安全）
+      let acts = [];
+      try { acts = await fetchWbActivities(a); } catch (e) { acts = [{ error: e.message }]; }
+      const claimable = acts.filter((x) => x.claimable && (!onlyKinds || onlyKinds.includes(x.kind)));
+      if (!claimable.length) {
+        results.push({ accountId: a.id, name: a.name || a.id, activities: acts, claimed: [] });
+        continue;
+      }
+      const claimed = [];
+      for (const act of claimable) {
+        const r = await claimWbActivity(a, act.kind).catch((e) => ({ accountId: a.id, account: a.name || a.id, kind: act.kind, status: 'failed', error: e.message }));
+        claimed.push(r);
+        const ok = r.status === 'checked-in';
+        (ok ? logger.info : logger.warn)('WB-ACT', '{name} {label}:{msg}', { name: a.name || a.id, label: r.activityLabel || act.kind, msg: ok ? `领取成功 +${r.claimedAmount} 积分` : (r.error || r.message || r.status) });
+      }
+      results.push({ accountId: a.id, name: a.name || a.id, activities: acts, claimed });
+    }
+    const summary = {
+      claimed: results.reduce((s, r) => s + r.claimed.filter((x) => x.status === 'checked-in').length, 0),
+      already: results.reduce((s, r) => s + r.claimed.filter((x) => x.status === 'already').length, 0),
+      failed: results.reduce((s, r) => s + r.claimed.filter((x) => x.status === 'failed').length, 0),
+      total: results.reduce((s, r) => s + r.claimed.length, 0),
+    };
+    return json(res, 200, { results, summary });
+  }
+
   // 积分查询（统一结构：total / used / remaining / parts[]）
   const quotaMatch = p.match(/^\/api\/accounts\/([\w-]+)\/quota$/);
   if (quotaMatch && method === 'GET') {
@@ -578,9 +627,16 @@ async function handleApi(req, res, url) {
     if (account.meta?.cookieSiteId) {
       const site = getSite(account.meta.cookieSiteId);
       if (!site) return json(res, 404, { error: `站点 ${account.meta.cookieSiteId} 未配置` });
-      const rep = await reprobeCookieAccount(site, account).catch((e) => ({ ok: false, error: e.message }));
-      if (!rep.ok) return json(res, 502, { error: rep.error || '探测失败' });
-      const snap = rep.quotaSnapshot || {};
+      // 频率治理（面板 2 分钟自动轮询曾把五家上游全轰一遍）：默认读缓存快照零网络，
+      // 仅 ?live=1（手动「刷新积分」按钮 / 单卡回调）才真探上游并回填快照。缓存保鲜交给
+      // 后台推送循环（default 60 分钟）——它 live 拉到的余额本就该落库，顺手把这条链补上。
+      const live = url.searchParams.get('live') === '1';
+      let snap = account.meta?.quotaSnapshot || null;
+      if (live || !snap) {
+        const rep = await reprobeCookieAccount(site, account).catch((e) => ({ ok: false, error: e.message }));
+        if (!rep.ok) return json(res, 502, { error: rep.error || '探测失败' });
+        snap = rep.quotaSnapshot || {};
+      }
       // 快照形状两样：API 站 total=余额；HTML 探针站（tokenharbor）total 缺失、
       // used=已用百分比——统一结构按各自语义归一（HTML 站 remaining=100-used）。
       const total = Number(snap.total);

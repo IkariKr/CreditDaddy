@@ -319,8 +319,9 @@ test('网页会话账号「刷新积分」（/quota 端点）走重探语义：l
       assert.equal(cap.status, 200);
       const accId = cap.body.accountId;
 
-      // /quota 端点（产品页「刷新积分」按钮走的就是它）：必须成功并回填 lastProbe
-      const q = await call('GET', `/api/accounts/${accId}/quota`);
+      // /quota 端点（产品页「刷新积分」按钮走的就是它）：?live=1 强制真探——
+      // 回填 lastProbe + 余额快照。默认（无 live）读缓存零网络，面板 2 分钟自动轮询走那条。
+      const q = await call('GET', `/api/accounts/${accId}/quota?live=1`);
       assert.equal(q.status, 200, `quota 端点应 200，实际 ${q.status} ${JSON.stringify(q.body)}`);
       // tokenharbor = HTML 探针站：统一结构 total=100、remaining=100-used（55% 用了 → 45）
       assert.ok(q.body.quota && Number(q.body.quota.remaining) === 45, 'quota 统一结构（HTML 站 remaining=100-used）');
@@ -331,6 +332,12 @@ test('网页会话账号「刷新积分」（/quota 端点）走重探语义：l
       const acc = JSON.parse(await fs.readFile(path.join(home, 'accounts.json'), 'utf8')).find((a) => a.id === accId);
       assert.equal(acc.meta.lastProbe?.ok, true, 'lastProbe 必须更新（呼吸灯才会转绿）');
       assert.equal(acc.meta.quotaSnapshot?.used, 55, '余额快照回填（HTML 站 = used 百分比）');
+
+      // 缓存路径（无 ?live=1）：读 meta.quotaSnapshot 零上游请求——面板 2 分钟自动轮询走这条，
+      // 频率治理的回归锚点。改了缓存读取语义或又接回 live 探测，这里立刻红。
+      const qCache = await call('GET', `/api/accounts/${accId}/quota`);
+      assert.equal(qCache.status, 200);
+      assert.ok(qCache.body.quota && Number(qCache.body.quota.remaining) === 45, '缓存路径回同一数字（45）');
     } finally {
       await new Promise((r) => server.close(r));
     }
