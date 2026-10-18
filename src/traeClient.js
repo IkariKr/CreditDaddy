@@ -25,6 +25,9 @@ const CLAIM_URL = `${TRAE_API}/trae/api/v2/ug/checkin_credits/claim`;
 const USAGE_URL = `${TRAE_API}/trae/api/v2/pay/ide_user_ent_usage`;
 const PAY_STATUS_URL = `${TRAE_API}/trae/api/v2/pay/ide_user_pay_status`;
 
+/** 签到应得额度兜底：claim 有时只返回 { code:0 } 不带 credits 字段（status 预告值也拿不到时用） */
+const TRAE_DEFAULT_DAILY_CREDITS = 100;
+
 /** 时间戳宽容转换：Trae 部分字段是秒、部分是毫秒 */
 const iso = (v) => {
   const n = Number(v);
@@ -132,6 +135,9 @@ async function post(url, account, body = {}) {
 /** claim/status 的业务失败（code !== 0）不带 HTTP 错误状态，按 code 与 message 判定 */
 const authDead = (e) => Boolean(e && e.auth);
 
+/** 业务失败提示统一附 code：9074 之外的风控码全靠它定位（issue #31 排查被 message 吞码坑过） */
+const withCode = (message, code) => (Number.isFinite(code) && code !== 0 ? `${message}（code ${code}）` : message);
+
 /**
  * 额度：ide_user_ent_usage 的权益包列表 → CreditDaddy 统一结构。
  * 剩余 = entitlement_base_info.quota.credits_limit − pack 顶层 usage.credits_amount（逐包求和）。
@@ -219,7 +225,17 @@ export async function checkinTrae(account, ctx = {}) {
     return { ...base, status: 'failed', message: e.message, uid };
   }
   if (r.code !== 0) {
-    return { ...base, status: r.code === 9074 ? 'limited' : 'failed', message: r.message || `code ${r.code}`, uid };
+    // 服务端部分拒绝文案也长「已经签到」样（如「当前设备今日已经签到」）——归 already，
+    // 面板显示「今日已领」而非「领取失败」；多账号同 IP / 同登录源被服务端风控合并时走这条
+    if (/已经签到|已签到|already.*sign/i.test(String(r.message || ''))) {
+      return { ...base, status: 'already', message: withCode(r.message || '今日已签到', r.code), uid };
+    }
+    // 9074 实测文案「当前参与用户太多，请稍后再试」= 服务端瞬时限流（issue #31 面板实测），
+    // 不是设备限领——退避重试而非直接放弃；重试耗尽归 failed（不写签到 memo，下一轮还试）
+    if (r.code === 9074) {
+      return finalizeClaim(await claimWithRetry(ctx, () => post(CLAIM_URL, account)), base, uid, TRAE_DEFAULT_DAILY_CREDITS);
+    }
+    return { ...base, status: 'failed', message: withCode(r.message || `code ${r.code}`, r.code), uid };
   }
   const already = findField(r.body, 'checked_in');
   if (already === true || already === 1) {
@@ -228,20 +244,32 @@ export async function checkinTrae(account, ctx = {}) {
 
   // 签到应得额度：status 接口里通常预告 credits / extra_credits（如 100 积分），
   // claim 接口有时只返回 { code: 0, message: "success" } 而不包含 credits 字段，作为 fallback 避免 +0
-  const TRAE_DEFAULT_DAILY_CREDITS = 100;
   const expectedCredits = Number(findField(r.body, 'credits') ?? findField(r.body, 'extra_credits')) || TRAE_DEFAULT_DAILY_CREDITS;
 
-  const c = await post(CLAIM_URL, account);
-  if (c.code !== 0) {
-    ctx.log?.(`Trae 领取失败：${c.message || `code ${c.code}`}`);
-    return {
-      ...base,
-      status: c.code === 9074 ? 'limited' : 'failed',
-      message: c.message || `code ${c.code}`,
-      uid,
-    };
+  return finalizeClaim(await claimWithRetry(ctx, () => post(CLAIM_URL, account)), base, uid, expectedCredits);
+}
+
+/** 9074 瞬时限流退避重试：3 次，间隔 3s/8s/15s；始终失败返回最后一次响应（由 finalizeClaim 归 failed） */
+async function claimWithRetry(ctx, attempt) {
+  const backoff = [0, 3000, 8000, 15000];
+  let res = await attempt();
+  for (let i = 1; i < backoff.length && res.code === 9074; i++) {
+    ctx.log?.(`Trae 服务端限流（code 9074），${backoff[i] / 1000}s 后重试（${i}/${backoff.length - 1}）`);
+    await new Promise((ok) => setTimeout(ok, backoff[i]));
+    res = await attempt();
   }
-  const claimed = Number(findField(c.body, 'credits')) || expectedCredits;
+  return res;
+}
+
+/** claim 响应 → 签到契约；「已经签到」文案归 already，9074 重试耗尽归 failed（不写 memo 可下轮重试） */
+function finalizeClaim(c, base, uid, fallbackCredits = 0) {
+  if (c.code !== 0) {
+    if (/已经签到|已签到|already.*sign/i.test(String(c.message || ''))) {
+      return { ...base, status: 'already', message: withCode(c.message || '今日已签到', c.code), uid };
+    }
+    return { ...base, status: 'failed', message: withCode(c.message || `code ${c.code}`, c.code), uid };
+  }
+  const claimed = Number(findField(c.body, 'credits')) || fallbackCredits;
   return { ...base, status: 'checked-in', claimedAmount: claimed, message: claimed ? `签到成功，+${claimed} 积分` : '签到成功', uid };
 }
 

@@ -321,12 +321,22 @@ export async function fetchJsonRace(url, { method = 'GET', headers = {}, body = 
   const order = useProxy
     ? (preferProxy || proxyFirst() ? ['viaProxy', 'direct'] : ['direct', 'viaProxy'])
     : ['direct'];
-  let lastErr = null;
+  // 双路都失败时聚合错误再抛：只抛最后一条会把「直连网络抖动」伪装成「代理挂了」
+  // （或反之）——issue #31 面板只见 connect ECONNREFUSED 127.0.0.1:3213，看不到直连
+  // 那条路到底发生了什么，排查方向直接被带偏
+  const errs = [];
   for (const which of order) {
     const attempts = makeAttempt();
-    try { return await attempts[which](); } catch (e) { lastErr = e; }
+    try { return await attempts[which](); } catch (e) { errs.push([which, e]); }
   }
-  throw lastErr || new Error('fetch failed');
+  if (errs.length > 1) {
+    const detail = errs.map(([w, e]) => `${w === 'direct' ? '直连' : '代理'}: ${e?.message || e}`).join('；');
+    const last = errs[errs.length - 1][1];
+    // 在最后一条错误上改写 message（保留 err.code / instanceof，调用方判定不受影响）
+    last.message = detail;
+    throw last;
+  }
+  throw errs[0]?.[1] || new Error('fetch failed');
 }
 
 /** 领取失败码 → 中文提示（取自 zcode-switch i18n.rs） */
