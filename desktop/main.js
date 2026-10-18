@@ -1319,6 +1319,9 @@ function registerAuthWindowIpc() {
       for (const raw of String(body).split('\n')) {
         const line = raw.trim();
         if (!sec.theme && line.startsWith('>')) sec.theme = line.replace(/^>+\s?/, '');
+        // 「本版主题:**…**」格式（1.5.1 起）不是引用行，在线路径也要认——此前只有本地回落解析它，
+        // 在线拉到的 1.5.1 条目只剩标题没有主题（面板截图反馈）。全角/半角冒号都兼容。
+        else if (!sec.theme && /^本版主题[:：]/.test(line)) sec.theme = line.replace(/^本版主题[:：]\s?/, '');
         else if (line.startsWith('### ')) sec.topics.push(line.slice(4).trim());
       }
       return sec;

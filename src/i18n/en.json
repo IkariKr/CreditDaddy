@@ -1750,5 +1750,6 @@
   "已领 {n} 项，无可领活动": "{n} already claimed, nothing to claim",
   "端口 {port} 不可用（{code}），改试 {next}": "Port {port} unavailable ({code}), trying {next}",
   "未知": "unknown",
-  "端口 {start}~{end} 均不可用，回退系统随机空闲端口": "Ports {start}~{end} all unavailable, falling back to a random free system port"
+  "端口 {start}~{end} 均不可用，回退系统随机空闲端口": "Ports {start}~{end} all unavailable, falling back to a random free system port",
+  "<div class=\"hint\">加载中…</div>": "<div class=\"hint\">Loading…</div>"
 }

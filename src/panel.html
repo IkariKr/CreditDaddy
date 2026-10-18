@@ -3646,6 +3646,9 @@ function openFullChangelog() {
 function openChangelogModal() {
   const openReleases = openFullChangelog;
   if (!(window.creditdaddy && typeof window.creditdaddy.changelogBrief === 'function')) { openReleases(); return; }
+  // 先开窗给加载态：在线拉 GitHub API 最长 10s，无反馈就是「点了没反应」（用户反馈截图）
+  $('changelog-body').innerHTML = T('<div class="hint">加载中…</div>');
+  openModal('m-changelog');
   window.creditdaddy.changelogBrief().then((r) => {
     const box = $('changelog-body');
     const strip = (s) => esc(String(s || '').replace(/\*\*/g, ''));
@@ -3657,7 +3660,6 @@ function openChangelogModal() {
           + (s.topics && s.topics.length ? '<div class="hint" style="margin-top:4px">' + s.topics.map(strip).join(' · ') + '</div>' : '')
           + '</div>').join('')
       : T('<div class="hint">暂无本地更新日志，请到 GitHub Releases 查看。</div>');
-    openModal('m-changelog');
   }).catch(openReleases);
 }
 $('btn-changelog-full').onclick = openFullChangelog;
