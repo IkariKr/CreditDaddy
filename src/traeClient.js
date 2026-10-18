@@ -228,7 +228,7 @@ export async function checkinTrae(account, ctx = {}) {
     // 服务端部分拒绝文案也长「已经签到」样（如「当前设备今日已经签到」）——归 already，
     // 面板显示「今日已领」而非「领取失败」；多账号同 IP / 同登录源被服务端风控合并时走这条
     if (/已经签到|已签到|already.*sign/i.test(String(r.message || ''))) {
-      return { ...base, status: 'already', message: withCode(r.message || '今日已签到', r.code), uid };
+      return { ...base, status: 'already', message: withCode(r.message || '今天已签到', r.code), uid };
     }
     // 9074 实测文案「当前参与用户太多，请稍后再试」= 服务端瞬时限流（issue #31 面板实测），
     // 不是设备限领——退避重试而非直接放弃；重试耗尽归 failed（不写签到 memo，下一轮还试）
@@ -265,7 +265,7 @@ async function claimWithRetry(ctx, attempt) {
 function finalizeClaim(c, base, uid, fallbackCredits = 0) {
   if (c.code !== 0) {
     if (/已经签到|已签到|already.*sign/i.test(String(c.message || ''))) {
-      return { ...base, status: 'already', message: withCode(c.message || '今日已签到', c.code), uid };
+      return { ...base, status: 'already', message: withCode(c.message || '今天已签到', c.code), uid };
     }
     return { ...base, status: 'failed', message: withCode(c.message || `code ${c.code}`, c.code), uid };
   }
