@@ -4,6 +4,13 @@
 
 ---
 
+## [Unreleased]
+
+- 【计划】Trae 签到 9074 设备号轮换重试（issue #31 报告者实测反馈）：派生设备号被服务端一律拒 9074、同一时刻真机设备号可领——9074 重试时轮换派生设备号（每号确定性 + attempt 参数，跨天稳定、账号间不碰撞），不再固定同号退避。
+- 【计划】彻底删除 WorkBuddy 国际版「活跃领取」线（用户指定下版本执行）：workbuddyClient 活跃探测/领取（checkinWorkbuddyIntl / no-activity 语义）、checkin 全局开关 wbActivity 与 daemon 设置项、面板「设置 → 通用」开关 UI、providers.js intl 分支、i18n 相关词条。口径已定（用户确认）：**只删「活跃领取」机制本体**，workbuddy-intl 产品线保留（workbuddy.ai 登录 / 用量查看照常），不动 constants PROVIDERS / tenrouterAccounts 映射 / transfer 别名 / authDevice 登录入口，无存量账号清理。
+
+---
+
 ## [1.5.1] (2026-10-18)
 
 本版主题:**Trae 签到 9074 风控口径纠正（issue #31）——瞬时限流退避重试,不再误标「本机已领」+ 失败提示带服务端 code + 网络错误聚合双路原因**。无破坏性变更,可直接升级。
@@ -24,7 +31,6 @@
 - **网页会话探测频率治理**：面板 2 分钟自动轮询曾把五家上游（Token Harbor / 小米 MiMo / River / ModelScope / LongCat）全量 live 轰一遍（日志「就地重探通过」刷屏）。改为 `/api/accounts/:id/quota` 默认读缓存快照零网络，仅 `?live=1`（手动「刷新积分」按钮）才真探上游并回填快照；后台推送循环（默认 60 分钟）live 拉到的余额顺手落库 `meta.quotaSnapshot` 保鲜缓存。上游实际探测频率从「面板开着每 2 分钟」降到「后台每 60 分钟 + 手动」，面板显示与呼吸灯不变。
 - **WorkBuddy 临时活动批量领取（额外补偿 / 首月赠礼）**：新增 `POST /api/workbuddy/claim-activities` 用已存 Bearer 凭据批量领取（先查状态、只对 active && !claimed 的发领取请求，幂等多号安全），面板 WorkBuddy 页新增「领取活动」按钮一键领全部账号——免逐个网页点击。端点事实源 = usercenter bundle（`/billing/meter/compensation-status` / `claim-compensation` / `check-gift-claimed` / `claim-gift`），实测 Keycloak Bearer 直接可用（无需网页会话 cookie）。附 `GET /api/workbuddy/activities` 预览可领项。
 - 【待发】logger 运行时加固（6035938）已随 1.5.1 发出。
-- 【计划】彻底删除 WorkBuddy 国际版「活跃领取」线（用户指定下版本执行）：workbuddyClient 活跃探测/领取（checkinWorkbuddyIntl / no-activity 语义）、checkin 全局开关 wbActivity 与 daemon 设置项、面板「设置 → 通用」开关 UI、providers.js intl 分支、i18n 相关词条。口径已定（用户确认）：**只删「活跃领取」机制本体**，workbuddy-intl 产品线保留（workbuddy.ai 登录 / 用量查看照常），不动 constants PROVIDERS / tenrouterAccounts 映射 / transfer 别名 / authDevice 登录入口，无存量账号清理。
 
 ---
 
