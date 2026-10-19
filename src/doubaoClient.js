@@ -1,0 +1,122 @@
+/**
+ * 豆包（doubao.com）网页会话 — 每日签到领体验额度（issue #32）。
+ *
+ *   POST https://www.doubao.com/alice/ug/campaign/v3/detail/   任务面板数据（含签到状态）
+ *   POST https://www.doubao.com/alice/ug/campaign/landing/checkin  领取（+200 额度/天）
+ *
+ * 鉴权：纯 doubao.com 会话 cookie（网页捕获线），无 a_bogus / msToken 请求签名；
+ * device_id 空可过；服务端自带幂等（重复领取返回 idempotent:true 不重复发放）。
+ * 接口形状 2026-10-19/20 带调试端口实测（CDP 挂监听抓已签 + 未签两个场景）。
+ *
+ * 参与门槛：仅个人账号（飞书企业号被排除，活动页会提示「请切换至个人账号」）。
+ * 活动页 UI 有「仅支持豆包电脑版」前端墙，但接口不吃这套——cookie 直打即通。
+ */
+
+import { fetchJsonRace } from './zcodeClient.js';
+import { FETCH_TIMEOUT_MS } from './constants.js';
+
+const DETAIL_URL = 'https://www.doubao.com/alice/ug/campaign/v3/detail/';
+const CHECKIN_URL = 'https://www.doubao.com/alice/ug/campaign/landing/checkin';
+/** 任务面板所属活动组（pc 端激励任务 v3；签到是其中的 daily_signin 任务） */
+const CAMPAIGN_GROUP = 'pc_incentive_task_mvp_v3';
+
+const postJson = (url, cookie, body) => fetchJsonRace(url, {
+  method: 'POST',
+  headers: {
+    Cookie: String(cookie || ''),
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/plain, */*',
+    Referer: 'https://www.doubao.com/pc/agent-explore',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+  },
+  body: JSON.stringify(body),
+  timeoutMs: FETCH_TIMEOUT_MS,
+});
+
+/** 会话失效的业务码（实测：匿名 / 过期 cookie 返 code 710012001「登录已过期」） */
+const LOGIN_INVALID = 710012001;
+
+/** detail 响应里挖签到任务（tasks[].task_kind === 'daily_signin'） */
+function findCheckinTask(body) {
+  const tasks = body?.data?.tasks;
+  if (!Array.isArray(tasks)) return null;
+  return tasks.find((t) => t && t.task_kind === 'daily_signin') || null;
+}
+
+/**
+ * 签到状态 + 体验额度读数（detail 接口一次拿全）。
+ * @returns {{ auth: boolean, code: number|string|null, checkin: { checkedIn: boolean, continuousDays: number, lastDate: string, rewardAmount: number }|null, totalAmount: number|null }}
+ */
+export async function fetchDoubaoStatus(cookie) {
+  const res = await postJson(DETAIL_URL, cookie, { campaign_group_code: CAMPAIGN_GROUP });
+  let body = null;
+  try { body = JSON.parse(await res.text()); } catch { /* 非 JSON */ }
+  if (!body || typeof body !== 'object') return { auth: false, code: `HTTP ${res.status}`, checkin: null, totalAmount: null };
+  if (!body || typeof body !== 'object') return { auth: res.status !== 401, code: `HTTP ${res.status}`, checkin: null, totalAmount: null };
+  const code = Number(body.code);
+  if (code === LOGIN_INVALID) return { auth: false, code, checkin: null, totalAmount: null };
+  const task = findCheckinTask(body);
+  const c = task?.daily_checkin || {};
+  return {
+    auth: true,
+    code,
+    checkin: task ? {
+      checkedIn: c.checked_in_today === true,
+      continuousDays: Number(c.continuous_days) || 0,
+      lastDate: typeof c.last_checkin_date === 'string' ? c.last_checkin_date : null,
+      rewardAmount: Number(c.reward?.reward_amount) || 0,
+    } : null,
+    totalAmount: Number(body.data?.progress?.total_amount) || 0,
+  };
+}
+
+/**
+ * 每日签到：先查状态，未签才 claim。返回 CreditDaddy 签到契约。
+ * 服务端幂等：重复领取 code 0 + idempotent:true——归 already 不算错误。
+ */
+export async function checkinDoubao(account) {
+  const base = { accountId: account.id, account: account.name || account.id, provider: 'doubao' };
+  const cookie = account.meta?.cookieSiteSession?.cookie || account.cookie;
+  if (!cookie) return { ...base, status: 'failed', message: '缺少豆包会话 cookie（请重新登录捕获）' };
+
+  let st;
+  try {
+    st = await fetchDoubaoStatus(cookie);
+  } catch (e) {
+    return { ...base, status: 'failed', message: e?.message || '网络错误' };
+  }
+  if (!st.auth) {
+    const e = new Error('豆包会话已失效，请重新登录捕获');
+    e.auth = true;
+    throw e;
+  }
+  if (st.checkin?.checkedIn) {
+    return { ...base, status: 'already', message: '今天已签到', uid: null };
+  }
+  if (!st.checkin) {
+    // 活动下线 / 飞书企业号被排除等场景：detail 里没有签到任务
+    return { ...base, status: 'no-activity', message: '当前账号无签到任务（活动可能未开放，或飞书企业账号不支持参与）' };
+  }
+
+  let body = null;
+  try {
+    const res = await postJson(CHECKIN_URL, cookie, { scene: CAMPAIGN_GROUP });
+    const text = await res.text();
+    body = JSON.parse(text);
+  } catch (e) {
+    return { ...base, status: 'failed', message: e?.message || '网络错误' };
+  }
+  if (!body || typeof body !== 'object') return { ...base, status: 'failed', message: '签到接口返回无法解析' };
+  const code = Number(body.code);
+  if (code === LOGIN_INVALID) {
+    const e = new Error('豆包会话已失效，请重新登录捕获');
+    e.auth = true;
+    throw e;
+  }
+  if (code !== 0) return { ...base, status: 'failed', message: `${body.msg || body.message || '签到失败'}（code ${code}）` };
+  const d = body.data || {};
+  if (d.idempotent === true) return { ...base, status: 'already', message: '今天已签到（服务端幂等去重）' };
+  const amount = Number(d.reward_amount) || st.checkin.rewardAmount || 200;
+  const days = Number(d.continuous_days) || st.checkin.continuousDays + 1;
+  return { ...base, status: 'checked-in', claimedAmount: amount, message: `签到成功，+${amount} 额度（连续 ${days} 天）` };
+}

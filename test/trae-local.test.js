@@ -65,6 +65,19 @@ test('traeDevice：多账号每号独立设备码（issue #28）——客户端�
   assert.equal(traeDevice('7000000000000001', stored).deviceId, ids[0]);
 });
 
+test('traeDevice：attempt 轮换（issue #31）——9074 重试换设备号，同 attempt 恒定', () => {
+  // 报告者实测：派生号被服务端一律拒 9074、真机号同时刻可领 → 重试必须换号
+  const uid = '7000000000000001';
+  const d0 = traeDevice(uid, null, 0);
+  const d1 = traeDevice(uid, null, 1);
+  const d2 = traeDevice(uid, null, 2);
+  assert.notEqual(d0.deviceId, d1.deviceId, 'attempt 递增必须换 device-id');
+  assert.notEqual(d1.deviceId, d2.deviceId, 'attempt 2 与 1 也不同');
+  assert.notEqual(d0.marketUserId, d1.marketUserId, 'market 指纹同步换');
+  assert.equal(traeDevice(uid, null, 1).deviceId, d1.deviceId, '同 attempt 重放一致（确定性派生）');
+  for (const d of [d0, d1, d2]) assert.match(d.deviceId, /^\d{8,}$/, '轮换号仍是纯数字（合规）');
+});
+
 test('traeDevice：本机没有数字设备号时回落 uid 派生值，仍为纯数字', () => {
   for (const stored of [null, undefined, '', 'aha-a2881affbb0d589bf24700e2458b9bc7', '1234']) {
     const d = traeDevice('7000000000000001', stored);

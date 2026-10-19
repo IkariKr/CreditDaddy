@@ -224,13 +224,12 @@ async function runTickNow(opts) {
 
 async function runTickInner(opts) {
   const allAccounts = await loadAccounts();
-  // WB 国际版活跃请求全局开关（面板「设置 → 通用」）：关闭时该轮与手动领取都不再打
-  const wbActivity = (await loadSettings()).workbuddyActivity !== false;
+  // workbuddy-intl 无 checkin 动作（providers.js 的 intl 分支已删），providers 过滤天然跳过；
+  // 「活跃请求」全局开关随该机制一并删除（设置项不再读写）
   const accounts = allAccounts.filter(
     (a) => (!opts.provider || a.provider === opts.provider)
         && (!opts.product || productOf(a.provider) === opts.product)
         && (!opts.onlyAccountId || a.id === opts.onlyAccountId)
-        && (wbActivity || a.provider !== 'workbuddy-intl')
         && typeof productImpl(a.provider)?.checkin === 'function'
   );
   const zAccounts = (opts.includeZcode !== false && autoClaimEnabled()

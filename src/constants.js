@@ -51,6 +51,7 @@ export const PROVIDER_LABEL = {
   river: 'River AI',
   modelscope: 'ModelScope 魔搭',
   longcat: 'LongCat',
+  doubao: '豆包',
 };
 /** provider → 产品线（qoder / workbuddy / zcode / mirasim / catpaw / trae / minimax / tokenharbor / xiaomi-mimo / river） */
 export const productOf = (provider) => {
@@ -66,6 +67,7 @@ export const productOf = (provider) => {
   if (p === 'river') return 'river';
   if (p === 'modelscope') return 'modelscope';
   if (p === 'longcat') return 'longcat';
+  if (p === 'doubao') return 'doubao';
   return 'qoder';
 };
 /** provider 是否国内版 */

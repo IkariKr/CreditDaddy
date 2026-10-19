@@ -52,9 +52,12 @@ function seeded(uid, salt, n) {
   return out.slice(0, n);
 }
 
-export function traeDevice(uid, storedDeviceId) {
-  const d = seeded(uid, 'devid', 15).map((b) => String(48 + (b % 10)));
-  const m = seeded(uid, 'market', 16);
+export function traeDevice(uid, storedDeviceId, attempt = 0) {
+  // attempt 参数：9074 重试时轮换派生设备号（issue #31 报告者实测——派生号被服务端一律拒 9074、
+  // 同一时刻真机号可领，说明服务端大概率只认登录时注册的设备号，换号重试才有机会过）。
+  // attempt=0 为默认指纹（跨天稳定恒定）；attempt>0 派生结果互异但同样确定（同 attempt 重放一致）。
+  const d = seeded(`${uid}`, `devid:${attempt}`, 15).map((b) => String(48 + (b % 10)));
+  const m = seeded(`${uid}`, `market:${attempt}`, 16);
   m[6] = (m[6] & 0x0f) | 0x40;
   m[8] = (m[8] & 0x3f) | 0x80;
   const h = m.map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -102,12 +105,12 @@ function findField(obj, key, depth = 0) {
   return undefined;
 }
 
-/** 统一 POST → { status, body }；401 / code 1001 抛 auth 错误（凭据失效） */
-async function post(url, account, body = {}) {
+/** 统一 POST → { status, body }；401 / code 1001 抛 auth 错误（凭据失效）。attempt 透传给设备派生（9074 轮换重试用） */
+async function post(url, account, body = {}, attempt = 0) {
   const jwt = account.token;
   if (!jwt) throw new Error('账号缺少 Trae 登录 token（请到 Trae 客户端登录后用「本机导入」同步）');
   const uid = account.uid || uidFromJwt(jwt);
-  const dev = traeDevice(uid || 'anonymous', account.meta?.deviceId);
+  const dev = traeDevice(uid || 'anonymous', account.meta?.deviceId, attempt);
   const res = await fetchJsonRace(url, {
     method: 'POST',
     headers: traeHeaders(jwt, dev),
@@ -230,10 +233,12 @@ export async function checkinTrae(account, ctx = {}) {
     if (/已经签到|已签到|already.*sign/i.test(String(r.message || ''))) {
       return { ...base, status: 'already', message: withCode(r.message || '今天已签到', r.code), uid };
     }
-    // 9074 实测文案「当前参与用户太多，请稍后再试」= 服务端瞬时限流（issue #31 面板实测），
-    // 不是设备限领——退避重试而非直接放弃；重试耗尽归 failed（不写签到 memo，下一轮还试）
+    // 9074 实测两副面孔（issue #31）：面板文案「当前参与用户太多」像瞬时限流，但报告者对照
+    // 实验显示派生设备号被服务端一律拒 9074、同一时刻真机号可领——服务端大概率只认登录时
+    // 注册的设备号。因此重试时**轮换派生设备号**（attempt 递增），退避 + 换号双管齐下；
+    // 重试耗尽归 failed（不写签到 memo，下一轮还试）
     if (r.code === 9074) {
-      return finalizeClaim(await claimWithRetry(ctx, () => post(CLAIM_URL, account)), base, uid, TRAE_DEFAULT_DAILY_CREDITS);
+      return finalizeClaim(await claimWithRetry(ctx, (i) => post(CLAIM_URL, account, {}, i)), base, uid, TRAE_DEFAULT_DAILY_CREDITS);
     }
     return { ...base, status: 'failed', message: withCode(r.message || `code ${r.code}`, r.code), uid };
   }
@@ -246,17 +251,20 @@ export async function checkinTrae(account, ctx = {}) {
   // claim 接口有时只返回 { code: 0, message: "success" } 而不包含 credits 字段，作为 fallback 避免 +0
   const expectedCredits = Number(findField(r.body, 'credits') ?? findField(r.body, 'extra_credits')) || TRAE_DEFAULT_DAILY_CREDITS;
 
-  return finalizeClaim(await claimWithRetry(ctx, () => post(CLAIM_URL, account)), base, uid, expectedCredits);
+  return finalizeClaim(await claimWithRetry(ctx, (i) => post(CLAIM_URL, account, {}, i)), base, uid, expectedCredits);
 }
 
-/** 9074 瞬时限流退避重试：3 次，间隔 3s/8s/15s；始终失败返回最后一次响应（由 finalizeClaim 归 failed） */
-async function claimWithRetry(ctx, attempt) {
+/**
+ * claim 重试：间隔 3s/8s/15s，每次重试换一个派生设备号（attempt 1/2/3）。
+ * 首次尝试用默认指纹（attempt 0），始终失败返回最后一次响应（由 finalizeClaim 归 failed）。
+ */
+async function claimWithRetry(ctx, attemptFn) {
   const backoff = [0, 3000, 8000, 15000];
-  let res = await attempt();
+  let res = await attemptFn(0);
   for (let i = 1; i < backoff.length && res.code === 9074; i++) {
-    ctx.log?.(`Trae 服务端限流（code 9074），${backoff[i] / 1000}s 后重试（${i}/${backoff.length - 1}）`);
+    ctx.log?.(`Trae 服务端拒绝（code 9074），${backoff[i] / 1000}s 后换设备号重试（${i}/${backoff.length - 1}）`);
     await new Promise((ok) => setTimeout(ok, backoff[i]));
-    res = await attempt();
+    res = await attemptFn(i);
   }
   return res;
 }

@@ -1677,7 +1677,7 @@ async function handleApi(req, res, url) {
 
   // Panel 设置：GET 读取（只回状态不回显密码），PUT 设置 / 修改 / 关闭访问密码
   if (p === '/api/settings' && method === 'GET') {
-    return json(res, 200, { panelKeyEnabled: panelKeyRequired(), locale: getLocale(), workbuddyActivity: (await loadSettings()).workbuddyActivity !== false });
+    return json(res, 200, { panelKeyEnabled: panelKeyRequired(), locale: getLocale() });
   }
   if (p === '/api/settings' && method === 'PUT') {
     const body = await readBody(req).catch(() => ({}));
@@ -1694,11 +1694,6 @@ async function handleApi(req, res, url) {
     }
     if (body?.autoCheckin !== undefined || body?.checkinIntervalMin !== undefined) {
       await resyncAutoCheckinScheduler();
-      return json(res, 200, { ok: true });
-    }
-    // WB 国际版活跃请求总开关（面板「设置 → 通用」）
-    if (typeof body?.workbuddyActivity === 'boolean') {
-      await saveSettings({ workbuddyActivity: body.workbuddyActivity });
       return json(res, 200, { ok: true });
     }
     // 只有携带密码字段才走密码分支：纯语言/其它设置的请求此前会掉进

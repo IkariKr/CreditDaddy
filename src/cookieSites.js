@@ -154,6 +154,27 @@ export const COOKIE_SITES = [
     accountName: 'LongCat 网页会话',
     hint: '登录 longcat.chat 后自动抓取 Token 资源包余量与逐包明细（当前包 + 其他包，按官方消耗顺序排列）；推送 10Router 只带 token 数字，会话 cookie 只存本机。',
   },
+  {
+    id: 'doubao',
+    name: '豆包',
+    provider: 'doubao',
+    label: '豆包体验额度',
+    loginUrl: 'https://www.doubao.com',
+    homeUrl: 'https://www.doubao.com',
+    // 探测 = 任务面板数据接口本身（issue #32，2026-10-19/20 实测）：POST detail 带会话 cookie
+    // 返 200 {code:0}，未登录返 200 {code:710012001,"login invalid"}——用 match 判业务码而非 HTTP 状态。
+    // 活动页 UI 有「仅支持电脑版」前端墙，但接口不吃这套（纯 cookie 鉴权，无 a_bogus 签名）。
+    probe: {
+      url: 'https://www.doubao.com/alice/ug/campaign/v3/detail/',
+      method: 'POST',
+      body: JSON.stringify({ campaign_group_code: 'pc_incentive_task_mvp_v3' }),
+      match: '"code":0',
+      accept: 'application/json, text/plain, */*',
+    },
+    verify: 'api',
+    accountName: '豆包网页会话',
+    hint: '登录 doubao.com 后自动抓取体验额度与每日签到状态（+200/天，服务端幂等）；仅个人账号可参与（飞书企业号被排除）；凭据只存本机。',
+  },
 ];
 
 export const getSite = (id) => COOKIE_SITES.find((s) => s.id === id) || null;
@@ -187,13 +208,16 @@ function testProbeMatch(site, text) {
 /**
  * 探测一份会话 cookie 是否仍然有效。
  * 探测走 fetchJsonRace（跟随全局代理配置——Token Harbor 对大陆/港澳有封锁，出口代理是必须项）。
+ * probe 支持 method / body（JSON API 探测，如豆包的 POST detail 接口——GET 打不到任务数据）。
  * @returns {Promise<{ok: boolean, reason?: 'invalid'|'no-match'|'http'|'network', status?: number, html?: string}>}
  */
 export async function verifySiteCookie(site, cookie, { fetchImpl } = {}) {
   const url = probeUrl(site);
-  const doFetch = fetchImpl || ((u, init) => fetchJsonRace(u, { headers: init.headers, timeoutMs: 12000 }));
+  const method = site.probe?.method || 'GET';
+  const doFetch = fetchImpl || ((u, init) => fetchJsonRace(u, { headers: init.headers, method, body: site.probe?.body || undefined, timeoutMs: 12000 }));
   try {
     const headers = { ...dashboardHeaders(site), Cookie: String(cookie || '') };
+    if (site.probe?.body) headers['Content-Type'] = headers['Content-Type'] || 'application/json';
     const r = await doFetch(url, { headers });
     if (r.status === 401 || r.status === 403) return { ok: false, reason: 'invalid', status: r.status };
     if (r.status !== 200) return { ok: false, reason: 'http', status: r.status };

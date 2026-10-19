@@ -10,12 +10,13 @@
 
 import { productOf } from './constants.js';
 import { checkinOne as checkinQoder, fetchQuotaUsage, fetchUserinfo, fetchUsageDetail } from './qoderClient.js';
-import { checkinWorkbuddy, checkinWorkbuddyIntl, fetchWorkbuddyQuota, inspectToken } from './workbuddyClient.js';
+import { checkinWorkbuddy, fetchWorkbuddyQuota, inspectToken } from './workbuddyClient.js';
 import { fetchZcodeQuota } from './zcodeClient.js';
 import { fetchMirasimQuota, fetchMirasimProfile } from './mirasimClient.js';
 import { fetchCatpawQuota, fetchCatpawProfile } from './catpawClient.js';
 import { fetchTraeQuota, checkinTrae, verifyTraeAccount } from './traeClient.js';
 import { fetchMiniMaxQuota, checkinMiniMax, verifyMiniMaxAccount } from './minimaxClient.js';
+import { fetchDoubaoStatus, checkinDoubao } from './doubaoClient.js';
 /** 从 userinfo 响应中挑一个可读的显示名 */
 export function displayNameFrom(ui) {
   const pick = [ui?.nickname, ui?.name, ui?.username, ui?.email]
@@ -124,8 +125,9 @@ const PRODUCTS = {
   },
   workbuddy: {
     label: 'WorkBuddy',
-    // 国内版走 billing daily-checkin 签到；国际版没有签到接口，走「活跃领取」（免费档对话探测）
-    checkin: (account, ctx) => (account.provider === 'workbuddy-intl' ? checkinWorkbuddyIntl(account, ctx) : checkinWorkbuddy(account, ctx)),
+    // 国内版走 billing daily-checkin 签到；国际版无签到动作（原「活跃领取」线已删——
+    // 逐日主动打上游对话接口博资格的机制整体下线，workbuddy-intl 产品线本身保留，额度查看照常）
+    checkin: (account, ctx) => checkinWorkbuddy(account, ctx),
     quota: (account, ctx) => fetchWorkbuddyQuota(account, ctx),
     verify: async (account) => {
       const info = inspectToken(account.token);
@@ -193,6 +195,40 @@ const PRODUCTS = {
     checkin: (account, ctx = {}) => checkinMiniMax(account, wrapMiniMaxRefresh(account, ctx)),
     quota: (account, ctx = {}) => fetchMiniMaxQuota(account, wrapMiniMaxRefresh(account, ctx)),
     verify: (account) => verifyMiniMaxAccount(account),
+  },
+  doubao: {
+    label: '豆包',
+    // 网页会话捕获线（issue #32）：凭据是 doubao.com 会话 cookie（meta.cookieSiteSession.cookie）。
+    // 每日签到 +200 额度（服务端幂等）；「额度」= 活动累计获得点数（progress.total_amount），
+    // 与其他产品线的套餐/积分口径不同，面板以独立产品页呈现。
+    checkin: (account) => checkinDoubao(account),
+    quota: async (account) => {
+      const cookie = account.meta?.cookieSiteSession?.cookie;
+      const st = await fetchDoubaoStatus(cookie);
+      if (!st.auth) {
+        const e = new Error('豆包会话已失效，请重新登录捕获');
+        e.auth = true;
+        throw e;
+      }
+      return {
+        total: st.totalAmount,
+        used: 0,
+        remaining: st.totalAmount,
+        exceeded: false,
+        plan: null,
+        planExpiresAt: null,
+        parts: st.checkin ? [{
+          name: '每日签到',
+          total: st.checkin.rewardAmount,
+          used: 0,
+          remaining: st.checkin.checkedIn ? st.checkin.rewardAmount : 0,
+          expiresAt: null,
+          recurring: true,
+          unit: '额度',
+        }] : [],
+        empty: st.totalAmount === 0 && !st.checkin,
+      };
+    },
   },
 };
 
