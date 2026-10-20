@@ -696,6 +696,7 @@ async function handleApi(req, res, url) {
     if (account.meta?.cookieSiteId) {
       const site = getSite(account.meta.cookieSiteId);
       if (!site) return json(res, 404, { error: `站点 ${account.meta.cookieSiteId} 未配置` });
+      if (site.disabled === true) return json(res, 410, { error: '该站点已停用（issue #35），不再探测上游' });
       // 频率治理（面板 2 分钟自动轮询曾把五家上游全轰一遍）：默认读缓存快照零网络，
       // 仅 ?live=1（手动「刷新积分」按钮 / 单卡回调）才真探上游并回填快照。缓存保鲜交给
       // 后台推送循环（default 60 分钟）——它 live 拉到的余额本就该落库，顺手把这条链补上。
@@ -1405,6 +1406,7 @@ async function handleApi(req, res, url) {
     const accounts = await loadAccounts();
     const targets = accounts.filter((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id
       && (!onlyId || a.id === onlyId));
+    if (site.disabled === true) return json(res, 410, { error: '该站点已停用（issue #35），不再探测上游' });
     if (!targets.length) return json(res, 404, { error: '没有可重探的会话（先登录捕获一次）' });
     // 重探只推涉及的那几路 source（其余卡不打上游、不重推）：
     // tokenharbor 是单例卡（source 固定）；mimo/river/ms 按账号算 source；失败行也进名单
