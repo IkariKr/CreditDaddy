@@ -287,6 +287,35 @@ export function normalizeMiniMaxQuota(data) {
 }
 
 /**
+ * 只查签到状态，不打 claim（10R 只读推送用，issue #33）。
+ * 刷新失败等凭据问题照常抛错；查询失败返回 null（推送侧降级为不带签到字段）。
+ * @returns {Promise<{checkedToday: boolean, streakDays: number, points: number, bonusPoints: number}|null>}
+ */
+export async function fetchMiniMaxCheckinStatus(account, ctx = {}) {
+  try {
+    return await withMiniMaxAuth(account, async (token) => {
+      const statusRes = await fetchJsonRace(SIGNIN_STATUS_URL, {
+        headers: authHeaders(token),
+        timeoutMs: FETCH_TIMEOUT_MS,
+      });
+      if (!statusRes.ok) return null;
+      const statusData = await statusRes.json().catch(() => null);
+      if (!statusData || statusData.base_resp?.status_code !== 0) return null;
+      const today = (statusData.data?.days || []).find((d) => d.is_today);
+      if (!today) return null;
+      return {
+        checkedToday: today.status === 3,
+        streakDays: today.day_no || 0,
+        points: today.points || 0,
+        bonusPoints: today.bonus_points || 0,
+      };
+    }, ctx);
+  } catch {
+    return null;   // 推送是旁路：凭据失效 / 网络抖动都不该炸整轮推送
+  }
+}
+
+/**
  * 每日自动签到 (checkin)
  */
 export async function checkinMiniMax(account, ctx = {}) {

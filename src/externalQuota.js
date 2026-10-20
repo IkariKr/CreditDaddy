@@ -103,12 +103,15 @@ export function nextUtc8Midnight(now = new Date()) {
 }
 
 /**
- * 组装 minimax-code 卡片载荷（issue #24 行字段建议）：
+ * 组装 minimax-code 卡片载荷（issue #24 行字段建议 + issue #33 签到状态字段）：
  * 每账号一行「存量」——`used=0 / total=剩余算力币 / displayRemaining=true`，
  * `resetAt` 给次日零点（免费线每日刷新口径）。全部查询失败时降级为文字状态卡。
+ * 每行可带只读签到状态（checkinToday / streakDays）——10R 白名单放行后卡面显示「今日已签」；
+ * 旧版 10R 无此字段自动忽略（向前兼容）。签到动作不进 10R（只读边界，方案 B）。
  * @param fetchQuota 注入的「account → 归一化额度」查询器（生产 = fetchMiniMaxQuota）
+ * @param fetchCheckin 注入的「account → 签到状态」查询器（生产 = fetchMiniMaxCheckinStatus；测试可注入）
  */
-export async function buildMiniMaxPayload(accounts, fetchQuota, { resetAt } = {}) {
+export async function buildMiniMaxPayload(accounts, fetchQuota, { resetAt, fetchCheckin } = {}) {
   const rows = {};
   let failed = 0;
   for (const a of accounts.slice(0, MAX_ROWS)) {
@@ -117,7 +120,7 @@ export async function buildMiniMaxPayload(accounts, fetchQuota, { resetAt } = {}
     const remaining = Number(q?.remaining);
     if (!Number.isFinite(remaining) || q?.error) { failed++; continue; }
     const i = Object.keys(rows).length;
-    rows[rowKey(i)] = {
+    const row = {
       name: (a.name || a.uid || 'MiniMax').slice(0, 80),
       used: 0,
       total: Math.max(remaining, 0) || 0.000001,   // total 必须 >0（10Router positiveNumber）；0 余额给最小正数让卡片显示「耗尽」
@@ -125,6 +128,17 @@ export async function buildMiniMaxPayload(accounts, fetchQuota, { resetAt } = {}
       recurring: true,
       resetAt: resetAt || nextUtc8Midnight(),
     };
+    // 签到状态（可选注入，fetch 失败 / 无注入则不带——字段缺席即「状态未知」，10R 不画徽章）
+    if (fetchCheckin) {
+      try {
+        const c = await fetchCheckin(a);
+        if (c) {
+          row.checkinToday = c.checkedToday === true;
+          if (Number.isFinite(c.streakDays) && c.streakDays > 0) row.streakDays = c.streakDays;
+        }
+      } catch { /* 状态未知就不带 */ }
+    }
+    rows[rowKey(i)] = row;
   }
   const payload = { provider: 'minimax-code', label: t('MiniMax Code 免费额度') };
   if (Object.keys(rows).length) {
@@ -232,8 +246,21 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
     return Number.isFinite(at) && (Date.now() - at) < DEAD_RETRY_MS;
   };
 
-  // 清理历史遗留的 minimax-code 卡片（MiniMax 账号会话在 CD 自持，避免生成 0 行报错卡）
-  if (!only) deleteExternalQuota({ endpoint, key, source: 'minimax-code', fetchImpl }).catch(() => {});
+  // 0. minimax-code（issue #33 方案 B：算力币余额 + 只读签到状态推送——此前停用（10R 下架
+  //    minimax-free 后无挂靠点），现恢复：凭据不出 CD，10R 只展示；签到动作留在 CD）
+  const mmAccounts = (accounts || []).filter((a) => a.provider === 'minimax' && (a.token || a.refreshToken));
+  if (mmAccounts.length && (!only || only.includes('minimax-code'))) {
+    try {
+      const { fetchMiniMaxQuota, fetchMiniMaxCheckinStatus } = await import('./minimaxClient.js');
+      const payload = await buildMiniMaxPayload(mmAccounts, (a) => fetchMiniMaxQuota(a), { fetchCheckin: (a) => fetchMiniMaxCheckinStatus(a) });
+      const r = await pushOne({ endpoint, key, source: 'minimax-code', payload, fetchImpl, refreshUrl: await rurl('minimax-code') });
+      results.push({ source: 'minimax-code', status: 'ok', entries: r.entries });
+      logger.info('10R', '额度卡已推送：minimax-code（{n} 行）', { n: r.entries ?? (Object.keys(payload.quotas || {}).length || 0) });
+    } catch (e) {
+      results.push({ source: 'minimax-code', status: 'failed', error: e.message });
+      logger.warn('10R', '额度卡推送失败 minimax-code:{err}', { err: e.message });
+    }
+  }
 
   // 1. tokenharbor（issue #24：TH 免费额度网页读数）
   const thAccounts = (accounts || []).filter((a) => a.provider === 'tokenharbor' && a.meta?.cookieSiteId);

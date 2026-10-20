@@ -107,7 +107,7 @@ test('nextUtc8Midnight：返回下一个 UTC+8 零点', () => {
   assert.equal(iso2, '2026-10-13T16:00:00.000Z');
 });
 
-test('runQuotaPush：推送形状 = POST /api/external-quota/<source> + Bearer key；自动清理 minimax-code 残留', async () => {
+test('runQuotaPush：推送形状 = POST /api/external-quota/<source> + Bearer key', async () => {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url: String(url), init });
@@ -125,10 +125,6 @@ test('runQuotaPush：推送形状 = POST /api/external-quota/<source> + Bearer k
   const bySource = Object.fromEntries(r.results.map((x) => [x.source, x]));
   assert.equal(bySource.tokenharbor.status, 'failed');
   assert.equal(bySource['xiaomi-mimo-6786673'].status, 'ok');
-
-  // 验证 DELETE minimax-code 发起
-  const delMm = calls.find((c) => c.url.includes('/minimax-code') && c.init.method === 'DELETE');
-  assert.ok(delMm, '应自动请求 DELETE minimax-code 清理残留');
 
   // 凭据永不出载荷：整份请求体里不得出现 cookie/token 材料
   for (const c of calls.filter((c) => c.init.body)) {
@@ -299,4 +295,69 @@ test('自愈③：snapshotAgeTag——>24h 陈粮带时刻标注，新鲜/无时
   assert.match(eq.snapshotAgeTag(old), /（数据 \d+-\d+ \d+:\d+）/, '超 24h 带时刻');
   assert.equal(eq.snapshotAgeTag(null), '');
   assert.equal(eq.snapshotAgeTag({ total: 1 }), '', '无 at 不标注');
+});
+
+// ── issue #33（方案 B）：minimax-code 恢复推送 + 只读签到状态字段 ──
+
+test('buildMiniMaxPayload：注入 fetchCheckin 时每行带只读签到状态（checkinToday / streakDays）', async () => {
+  const accounts = [
+    { id: 'mm1', name: 'MM甲', token: 't1' },
+    { id: 'mm2', name: 'MM乙', token: 't2' },
+  ];
+  const fetchQuota = async (a) => ({ total: 100, used: 0, remaining: 100 });
+  const fetchCheckin = async (a) => (a.id === 'mm1'
+    ? { checkedToday: true, streakDays: 7, points: 10, bonusPoints: 0 }
+    : { checkedToday: false, streakDays: 0, points: 0, bonusPoints: 0 });
+  const p = await eq.buildMiniMaxPayload(accounts, fetchQuota, { resetAt: '2026-10-20T00:00:00Z', fetchCheckin });
+  assert.equal(Object.keys(p.quotas).length, 2);
+  const [r1, r2] = Object.values(p.quotas);
+  assert.equal(r1.checkinToday, true, '已签账号带 true');
+  assert.equal(r1.streakDays, 7, '连签天数透传');
+  assert.equal(r2.checkinToday, false, '未签账号带 false');
+  assert.equal(r2.streakDays, undefined, '0 天不带 streak 字段');
+});
+
+test('buildMiniMaxPayload：不注入 fetchCheckin 时行不带签到字段（旧形状不变）', async () => {
+  const p = await eq.buildMiniMaxPayload([{ id: 'mm1', name: 'MM甲', token: 't' }], async () => ({ total: 50, used: 0, remaining: 50 }), { resetAt: 'x' });
+  const row = Object.values(p.quotas)[0];
+  assert.equal(row.checkinToday, undefined);
+  assert.equal(row.streakDays, undefined);
+});
+
+test('buildMiniMaxPayload：fetchCheckin 抛错 / 返回 null 时该行不带签到字段，不炸整卡', async () => {
+  const accounts = [{ id: 'a', name: 'A', token: 't' }, { id: 'b', name: 'B', token: 't' }];
+  const p = await eq.buildMiniMaxPayload(accounts, async () => ({ total: 9, used: 0, remaining: 9 }), {
+    resetAt: 'x',
+    fetchCheckin: async (a) => { if (a.id === 'a') throw new Error('boom'); return null; },
+  });
+  const rows = Object.values(p.quotas);
+  assert.equal(rows.length, 2);
+  for (const r of rows) assert.equal(r.checkinToday, undefined, '状态未知即不带字段');
+});
+
+test('runQuotaPush：minimax 账号触发 minimax-code 推送（恢复此前停用的分支）', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  // 双端 mock（按 URL 分流）：agent.minimax.cn = 上游（额度 + 签到状态），127.0.0.1 = 10R 推送。
+  // minimax 上游走 fetchJsonRace → globalThis.fetch；推送走注入的 fetchImpl → 也统一进这里记录。
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method });
+    if (String(url).includes('agent.minimax.cn')) {
+      if (String(url).includes('signin/status')) {
+        return new Response(JSON.stringify({ base_resp: { status_code: 0 }, data: { days: [{ is_today: true, status: 3, day_no: 5, points: 10, bonus_points: 0 }] } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ base_resp: { status_code: 0 }, data: { remaining_credits: '88', plan_name: 'Free', is_pro_builder: false, expires_at: 0, usage_summary: null } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  const fetchImpl = globalThis.fetch;
+  try {
+    await eq.runQuotaPush({
+      endpoint: 'http://127.0.0.1:20128', key: 'sk-t',
+      accounts: [{ provider: 'minimax', name: 'MM', token: 'tok', refreshToken: 'r' }],
+      fetchImpl,
+    });
+    const push = calls.find((c) => c.url.includes('/minimax-code') && c.method === 'POST');
+    assert.ok(push, '应有 minimax-code 推送 POST');
+  } finally { globalThis.fetch = realFetch; }
 });
