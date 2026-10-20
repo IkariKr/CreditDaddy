@@ -1777,5 +1777,7 @@
   "全部显示": "Show all",
   "隐藏此站点卡片（「全部显示」可恢复）": "Hide this site card (restore via \"Show all\")",
   "Inception 被限流（429，Cloudflare 对代理 IP 限速）——请稍后再试或更换代理节点": "Inception rate-limited (429, Cloudflare throttles proxy IPs) — retry later or switch proxy node",
-  "<button class=\"btn\" disabled title=\"网页 cookie 无法参与该站活动（活动校验客户端环境）——等待桌面版凭据线\">登录捕获（暂不可用）</button>": "<button class=\"btn\" disabled title=\"Web cookies cannot join this site's campaign (client-environment check) — desktop credential line pending\">Capture (unavailable)</button>"
+  "<button class=\"btn\" disabled title=\"网页 cookie 无法参与该站活动（活动校验客户端环境）——等待桌面版凭据线\">登录捕获（暂不可用）</button>": "<button class=\"btn\" disabled title=\"Web cookies cannot join this site's campaign (client-environment check) — desktop credential line pending\">Capture (unavailable)</button>",
+  "每日签到（+200 额度）": "Daily check-in (+200 credits)",
+  "当前代理：{url}（输入新值可更换，留空清除）": "Current proxy: {url} (enter a new value to change, leave empty to clear)"
 }

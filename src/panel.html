@@ -764,18 +764,12 @@
   </div>
 </div>
 
-<!-- 捐赠支持（渠道与 10Router 一致：GitHub Sponsors / 爱发电 / 支付宝 / 微信；UI 照 CD 设计语言） -->
+<!-- 捐赠支持（面向国内用户：爱发电 / 支付宝 / 微信；渠道与 10Router 一致，UI 照 CD 设计语言） -->
 <div class="mask" id="m-donate">
   <div class="modal">
     <div class="modal-title"><span data-i18n="捐赠支持">捐赠支持</span><button class="close" data-close>✕</button></div>
     <div class="hint" data-i18n="如果 CreditDaddy 对你有帮助，欢迎支持一下开发——免费渠道的每一行代码都是咖啡驱动的。">如果 CreditDaddy 对你有帮助，欢迎支持一下开发——免费渠道的每一行代码都是咖啡驱动的。</div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px;overflow-x:auto">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
-        <span style="font-size:26px">❤️</span>
-        <div style="font-weight:700" data-i18n="GitHub Sponsors">GitHub Sponsors</div>
-        <div class="hint" data-i18n="通过 Sponsors 支持">通过 Sponsors 支持</div>
-        <button class="btn" id="donate-open-sponsors" style="margin-top:auto" data-i18n="打开 ↗">打开 ↗</button>
-      </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px">
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
         <span style="font-size:26px">⚡</span>
         <div style="font-weight:700">AiFaDian</div>
@@ -1477,16 +1471,9 @@ function initTheme() {
     else window.open(url, '_blank');
   };
 
-  // 捐赠：弹窗展示四渠道（GitHub Sponsors / 爱发电 / 支付宝 / 微信，与 10Router 一致）；
+  // 捐赠：弹窗展示三渠道（爱发电 / 支付宝 / 微信——国内用户为主，与 10Router 一致）；
   // Sponsors 按钮跳转（桌面版走 IPC 桥，网页直接开浏览器）
-  const openSponsors = () => {
-    if (window.creditdaddy && typeof window.creditdaddy.shellOpen === 'function')
-      window.creditdaddy.shellOpen('https://github.com/sponsors/techysy');
-    else window.open('https://github.com/sponsors/techysy', '_blank', 'noopener');
-  };
   $('donate-btn').onclick = () => { closeHmenu(); openModal('m-donate'); };
-  const sponsorsBtn2 = $('donate-open-sponsors');
-  if (sponsorsBtn2) sponsorsBtn2.onclick = openSponsors;
 }
 
 // ── 状态 / 渲染 ──
@@ -2661,6 +2648,7 @@ function renderFreePool() {
             + '</div>'
             + '<div style="display:flex;align-items:center;gap:8px;flex:none">'
             + '<span class="dim" style="font-size:11.5px">' + (acc.capturedAt ? esc(fmtTime(acc.capturedAt)) : '–') + '</span>'
+            + (site.id === 'doubao' ? '<button class="icon-btn" data-act="checkin" data-id="' + esc(acc.id) + '" title="' + T('每日签到（+200 额度）') + '">' + I.play + '</button>' : '')
             + '<button class="icon-btn" data-act="reprobe" data-site="' + esc(site.id) + '" data-id="' + esc(acc.id) + '" title="' + T('就地重探（免登录，用已存会话刷新身份与额度）') + '">' + I.refresh + '</button>'
             + '<button class="icon-btn del" data-act="del" data-id="' + esc(acc.id) + '" title="' + T('删除此账号') + '">' + I.trash + '</button>'
             + '</div></div>'
@@ -3844,7 +3832,7 @@ $('znet-ok').addEventListener('click', async () => {
     state.zProxyFirst = r.proxyFirst === true;
     await loadZNet();
     $('znet-url').value = '';
-    $('znet-url').placeholder = state.zProxyUrl || (state.zHasEnvProxy ? T('跟随环境变量 HTTPS_PROXY') : 'http://192.168.31.101:7890');
+    $('znet-url').placeholder = state.zProxyUrl ? T('当前代理：{url}（输入新值可更换，留空清除）', { url: state.zProxyUrl }) : (state.zHasEnvProxy ? T('跟随环境变量 HTTPS_PROXY') : 'http://192.168.31.101:7890');
     $('znet-state').textContent = T('已保存：') + (state.zProxyFirst === true ? T('代理优先') : T('直连优先'))
       + (state.zProxyUrl ? T(' · 代理 ') + state.zProxyUrl : '');
     toast(T('网络出口：') + (r.proxyFirst ? T('代理优先（直连兜底）') : T('直连优先（代理兜底）')) + (body.proxyUrl === '' ? T('，代理已清除') : T('，代理已保存')));
