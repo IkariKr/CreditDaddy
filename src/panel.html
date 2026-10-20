@@ -999,6 +999,8 @@ const I = {
   play: svg('<polygon points="6 4 20 12 6 20 6 4"/>'),
   refresh: svg('<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>'),
   trash: svg('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>'),
+  eye: svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeOff: svg('<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   upload: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>'),
   download: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>'),
@@ -2086,6 +2088,20 @@ async function installUmid() {
 $('notice').addEventListener('click', (e) => { if (e.target.closest('#btn-umid')) installUmid(); });
 // 覆盖 #notice（各产品横幅）与 #z-actions（ZCode 工具栏按钮组）的点击
 document.addEventListener('click', async (e) => {
+  // 免费额度页：站点卡隐藏 / 全部显示（拖拽排序在 renderFreePool 里经 bindCardDrag 绑定）
+  const hideBtn = e.target.closest('[data-free-hide]');
+  if (hideBtn) {
+    state.hiddenFreeSites.add(hideBtn.dataset.freeHide);
+    saveHiddenFreeSites();
+    renderFreePool();
+    return;
+  }
+  if (e.target.closest('#free-show-all')) {
+    state.hiddenFreeSites.clear();
+    saveHiddenFreeSites();
+    renderFreePool();
+    return;
+  }
   if (e.target.closest('#zt-open')) {
     try {
       const r = await window.creditdaddy.openZcodeClient();
@@ -2492,6 +2508,31 @@ async function loadCookieSites(force) {
   return state.cookieSites;
 }
 
+// 免费额度页站点卡：顺序 / 显隐（本机持久化；拖拽复用 bindCardDrag，眼睛按钮切换显隐）
+const FREE_ORDER_KEY = 'qd_free_site_order';
+const FREE_HIDDEN_KEY = 'qd_hidden_free_sites';
+state.freeOrder = (() => {
+  let arr = [];
+  try { arr = JSON.parse(localStorage.getItem(FREE_ORDER_KEY) || '[]'); } catch {}
+  return Array.isArray(arr) ? arr : [];
+})();
+function saveFreeOrder() { try { localStorage.setItem(FREE_ORDER_KEY, JSON.stringify(state.freeOrder)); } catch {} }
+state.hiddenFreeSites = (() => {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(FREE_HIDDEN_KEY) || '[]'); } catch {}
+  return new Set(Array.isArray(list) ? list : []);
+})();
+function saveHiddenFreeSites() { try { localStorage.setItem(FREE_HIDDEN_KEY, JSON.stringify([...state.hiddenFreeSites])); } catch {} }
+const freeVisible = (id) => !state.hiddenFreeSites.has(id);
+
+function orderedFreeSites(sites) {
+  const ids = sites.map((s) => s.id);
+  const arr = state.freeOrder.filter((id) => ids.includes(id));
+  for (const id of ids) if (!arr.includes(id)) arr.push(id);
+  state.freeOrder = arr;
+  return arr.map((id) => sites.find((s) => s.id === id)).filter(Boolean);
+}
+
 function renderFreePool() {
   const body = $('free-pool-body');
   if (!body) return;
@@ -2508,7 +2549,15 @@ function renderFreePool() {
     return;
   }
 
-  body.innerHTML = sites.map((site) => {
+  const hiddenCount = sites.filter((s) => !freeVisible(s.id)).length;
+  const showHiddenBar = hiddenCount > 0;
+  const visibleSites = orderedFreeSites(sites).filter((s) => freeVisible(s.id));
+
+  body.innerHTML = (showHiddenBar
+    ? T('<div class="hint" style="grid-column:1/-1;display:flex;align-items:center;gap:8px">') + T('{n} 个站点已隐藏', { n: hiddenCount })
+      + ' <button class="btn" id="free-show-all" style="padding:2px 10px;font-size:12px">' + T('全部显示') + '</button></div>'
+    : '')
+  + visibleSites.map((site) => {
     const rows = site.accounts || [];
     const stateTxt = rows.length
       ? T('<span class="badge ok">已捕获 ') + rows.length + T(' 个会话</span>')
@@ -2618,19 +2667,34 @@ function renderFreePool() {
       : T('<div class="muted-empty" style="padding:16px 0 6px">还没有捕获该站点的账号，点右上角「登录捕获」开始</div>');
 
     // justify-content 不用 space-between：网格行高被最高卡撑齐后，单行账号会被推到卡底（沉底）
-    return '<div class="card" style="display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:14px 16px;background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;box-shadow:var(--shadow)">'
+    const eyeBtn = '<button class="icon-btn" data-free-hide="' + esc(site.id) + '" title="' + T('隐藏此站点卡片（「全部显示」可恢复）') + '">' + I.eyeOff + '</button>';
+    return '<div class="card" draggable="true" data-id="' + esc(site.id) + '" style="display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:14px 16px;background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;box-shadow:var(--shadow)">'
       + '<div><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px">'
       + '<div style="display:flex;align-items:center;gap:8px">'
       + '<span style="font-size:14px;font-weight:700">' + esc(site.label || site.name) + '</span>'
       + stateTxt
       + '</div>'
-      + '<div style="display:flex;align-items:center;gap:6px">' + btn + pasteBtn + clearBtn + '</div>'
+      + '<div style="display:flex;align-items:center;gap:6px">' + btn + pasteBtn + clearBtn + eyeBtn + '</div>'
       + '</div>'
       + hint
       + '</div>'
       + accRows
       + '</div>';
   }).join('');
+  bindCardDrag(body, {
+    kind: 'free-site',
+    onReorder: (drag, targetId) => {
+      if (!drag.id) return;
+      const ids = state.freeOrder.slice();
+      const from = ids.indexOf(drag.id);
+      if (from >= 0) ids.splice(from, 1);
+      const ti = ids.indexOf(targetId);
+      ids.splice(ti < 0 ? ids.length : ti, 0, drag.id);
+      state.freeOrder = ids;
+      saveFreeOrder();
+      renderFreePool();
+    },
+  });
 }
 
 function renderCookieSites() {

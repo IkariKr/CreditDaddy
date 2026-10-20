@@ -190,6 +190,7 @@ export const COOKIE_SITES = [
       url: 'https://platform.inceptionlabs.ai/api/usage?quota=1',
       match: '"totalTokens"',
       accept: '*/*',
+      preferProxy: true,   // Cloudflare 按 IP 拦（直连 403 风控页），代理优先
     },
     verify: 'api',
     accountName: 'Inception 网页会话',
@@ -234,7 +235,7 @@ function testProbeMatch(site, text) {
 export async function verifySiteCookie(site, cookie, { fetchImpl } = {}) {
   const url = probeUrl(site);
   const method = site.probe?.method || 'GET';
-  const doFetch = fetchImpl || ((u, init) => fetchJsonRace(u, { headers: init.headers, method, body: site.probe?.body || undefined, timeoutMs: 12000 }));
+  const doFetch = fetchImpl || ((u, init) => fetchJsonRace(u, { headers: init.headers, method, body: site.probe?.body || undefined, timeoutMs: 12000, preferProxy: site.probe?.preferProxy === true }));
   try {
     const headers = { ...dashboardHeaders(site), Cookie: String(cookie || '') };
     if (site.probe?.body) headers['Content-Type'] = headers['Content-Type'] || 'application/json';

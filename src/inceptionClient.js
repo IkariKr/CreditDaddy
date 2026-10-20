@@ -33,6 +33,7 @@ export async function fetchInceptionUsage(cookie) {
         Referer: 'https://platform.inceptionlabs.ai/dashboard/billing',
         'User-Agent': UA,
       },
+      preferProxy: true,   // Inception 按 IP 拦大陆/部分亚太（直连 403 风控页算「成功响应」，必须代理优先）
       timeoutMs: FETCH_TIMEOUT_MS,
     });
   } catch (e) {

@@ -1772,5 +1772,8 @@
   "Inception 额度暂不可查（请重新捕获或稍后重试）": "Inception credits unavailable (re-capture or retry later)",
   "Inception Labs 免费额度": "Inception Labs free credits",
   "{name} cookie 捕获成功，额度卡片已就绪": "{name} cookie captured — card ready",
-  "cookie 捕获成功，额度卡片已就绪": "Cookie captured — card ready"
+  "cookie 捕获成功，额度卡片已就绪": "Cookie captured — card ready",
+  "{n} 个站点已隐藏": "{n} sites hidden",
+  "全部显示": "Show all",
+  "隐藏此站点卡片（「全部显示」可恢复）": "Hide this site card (restore via \"Show all\")"
 }
