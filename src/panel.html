@@ -774,19 +774,19 @@
         <span style="font-size:26px">⚡</span>
         <div style="font-weight:700">AiFaDian</div>
         <div class="hint" data-i18n="爱发电 · Power me ⚡">爱发电 · Power me ⚡</div>
-        <img data-donate-qr="ifdian" src="/assets/donate-ifdian.svg" alt="AiFaDian" style="width:140px;height:140px;margin-top:auto;border-radius:8px;padding:6px;flex:none;background:var(--qr-pad,#fff)">
+        <img src="/assets/donate-ifdian.svg?v=3" alt="AiFaDian" style="width:140px;height:140px;margin-top:auto;border-radius:8px;padding:6px;flex:none">
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
         <span style="font-size:26px">🅰️</span>
         <div style="font-weight:700">Alipay</div>
         <div class="hint" data-i18n="支付宝扫码打赏">支付宝扫码打赏</div>
-        <img data-donate-qr="alipay" src="/assets/donate-alipay.svg" alt="Alipay" style="width:140px;height:140px;margin-top:auto;border-radius:8px;padding:6px;flex:none;background:var(--qr-pad,#fff)">
+        <img src="/assets/donate-alipay.svg?v=3" alt="Alipay" style="width:140px;height:140px;margin-top:auto;border-radius:8px;padding:6px;flex:none">
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
         <span style="font-size:26px">💚</span>
         <div style="font-weight:700">WeChat Pay</div>
         <div class="hint" data-i18n="微信扫码打赏">微信扫码打赏</div>
-        <img data-donate-qr="wechat" src="/assets/donate-wechat.svg" alt="WeChat Pay" style="width:140px;height:140px;margin-top:auto;border-radius:8px;padding:6px;flex:none;background:var(--qr-pad,#fff)">
+        <img src="/assets/donate-wechat.svg?v=3" alt="WeChat Pay" style="width:140px;height:140px;margin-top:auto;border-radius:8px;padding:6px;flex:none">
       </div>
     </div>
     <div class="modal-actions"><button class="btn primary" data-close data-i18n="关闭">关闭</button></div>
@@ -1050,15 +1050,8 @@ const COMPONENTS = [
   { id: 'tenrouter', label: '10Router' },
 ];
 // 捐赠二维码随日夜主题切换（顶层定义：applyTheme 的调用早于原块级定义，块内 function 不可达）
-function applyDonateQrTheme(theme) {
-  const dark = theme === 'dark';
-  const suffix = dark ? '-dark' : '';
-  document.querySelectorAll('[data-donate-qr]').forEach((img) => {
-    const base = img.dataset.donateQr;
-    img.src = '/assets/donate-' + base + suffix + '.svg?v=2';
-  });
-  document.documentElement.style.setProperty('--qr-pad', 'transparent');
-}
+// 捐赠二维码统一低饱和金黄（透明底），日夜主题通用，无需随主题切换
+function applyDonateQrTheme() { /* 统一金码：无主题切换 */ }
 const HIDDEN_COMP_KEY = 'qd_hidden_components';
 const DEFAULT_HIDDEN_COMP = ['catpaw'];   // 妙手默认收起，右上角设置里可打开
 state.hidden = (() => {

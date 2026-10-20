@@ -1943,7 +1943,6 @@ export async function startDaemon(port = DEFAULT_PORT, host = '127.0.0.1') {
       if (url.pathname.startsWith('/assets/donate-')) {
         const file = {
           '/assets/donate-alipay.svg': 'donate-alipay.svg', '/assets/donate-ifdian.svg': 'donate-ifdian.svg', '/assets/donate-wechat.svg': 'donate-wechat.svg',
-          '/assets/donate-alipay-dark.svg': 'donate-alipay-dark.svg', '/assets/donate-ifdian-dark.svg': 'donate-ifdian-dark.svg', '/assets/donate-wechat-dark.svg': 'donate-wechat-dark.svg',
         }[url.pathname];
         if (!file) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Not Found'); }
         if (!panelKeyRequired()) {
