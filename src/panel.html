@@ -2562,9 +2562,12 @@ function renderFreePool() {
     const stateTxt = rows.length
       ? T('<span class="badge ok">已捕获 ') + rows.length + T(' 个会话</span>')
       : T('<span class="badge limited">未捕获</span>');
-    const btn = canCapture
-      ? '<button class="btn primary" data-capture-site="' + esc(site.id) + '">' + I.plus + T('登录捕获') + '</button>'
-      : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">登录捕获</button>');
+    const siteDisabled = site.disabled === true;
+    const btn = siteDisabled
+      ? T('<button class="btn" disabled title="网页 cookie 无法参与该站活动（活动校验客户端环境）——等待桌面版凭据线">登录捕获（暂不可用）</button>')
+      : canCapture
+        ? '<button class="btn primary" data-capture-site="' + esc(site.id) + '">' + I.plus + T('登录捕获') + '</button>'
+        : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">登录捕获</button>');
     // 「粘贴捕获」：部分站点（小米账号 SSO）登录态挂设备指纹，CD 无痕窗也会被静默 SSO
     // 拉回同一账号——多号并存走系统浏览器登录新号后手动粘 cookie（不依赖登录窗）。
     const pasteBtn = ' <button class="btn" data-paste-capture="' + esc(site.id) + '" title="' + T('在其他浏览器登录该站点后，把会话 cookie 粘贴进来捕获（多账号并存的可靠路径）') + '">' + T('粘贴捕获') + '</button>';
