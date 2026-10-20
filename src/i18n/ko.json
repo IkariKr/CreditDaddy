@@ -1775,5 +1775,7 @@
   "无法启动豆包客户端": "Doubao 클라이언트를 실행할 수 없습니다",
   "打开豆包客户端（签到请在客户端内完成）": "Doubao 클라이언트 열기(체크인은 클라이언트에서)",
   "需要桌面版 CreditDaddy": "CreditDaddy 데스크톱 필요",
-  "未找到豆包桌面版（请先安装）": "Doubao 데스크톱을 찾을 수 없습니다(먼저 설치하세요)"
+  "未找到豆包桌面版（请先安装）": "Doubao 데스크톱을 찾을 수 없습니다(먼저 설치하세요)",
+  "打开豆包": "Doubao 열기",
+  "<button class=\"btn\" disabled title=\"需要桌面版 CreditDaddy\">打开豆包</button>": "<button class=\"btn\" disabled title=\"CreditDaddy 데스크톱 필요\">Doubao 열기</button>"
 }

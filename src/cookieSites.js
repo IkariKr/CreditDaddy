@@ -164,19 +164,10 @@ export const COOKIE_SITES = [
     // 探测 = 任务面板数据接口本身（issue #32，2026-10-19/20 实测）：POST detail 带会话 cookie
     // 返 200 {code:0}，未登录返 200 {code:710012001,"login invalid"}——用 match 判业务码而非 HTTP 状态。
     // 活动页 UI 有「仅支持电脑版」前端墙，但接口不吃这套（纯 cookie 鉴权，无 a_bogus 签名）。
-    probe: {
-      url: 'https://www.doubao.com/alice/ug/campaign/v3/detail/',
-      method: 'POST',
-      body: JSON.stringify({ campaign_group_code: 'pc_incentive_task_mvp_v3' }),
-      match: '"code":0',
-      accept: 'application/json, text/plain, */*',
-    },
-    verify: 'api',
-    // 定位（用户拍板）：不做自动签到的承诺——活动在豆包客户端内，网页会话只做「额度/签到状态可见」
-    // + 「一键打开豆包客户端」快捷入口；签到动作由用户在客户端完成，CD 只读状态。
-    clientApp: 'Doubao',   // 面板「打开客户端」按钮拉起的进程名
-    no10rSync: true,   // 豆包不推 10R 外部配额卡（无对应提供商线），捕获文案不带「同步 10Router」
-    accountName: '豆包网页会话',
+    // 最终定位（用户拍板）：豆包 = 纯「快速打开客户端」入口。网页会话 cookie 下 detail
+    // 返回残缺数据（额度恒 0、签到状态不可信），额度可见也做不实——不加会话捕获探测，
+    // 只在面板出示快捷按钮。
+    entryOnly: true,       // 只出「打开豆包」按钮，无会话捕获 / 无探测 / 无账号行
     hint: '在豆包客户端（或网页）登录后捕获会话，CD 只读展示体验额度与每日签到状态（+200/天）；签到请在「打开豆包」里手动完成——活动在客户端内，CD 不代签；仅个人账号可参与（飞书企业号被排除），凭据只存本机。'
   }
 ];

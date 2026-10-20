@@ -1775,5 +1775,7 @@
   "无法启动豆包客户端": "Failed to launch Doubao client",
   "打开豆包客户端（签到请在客户端内完成）": "Open Doubao client (check in inside the client)",
   "需要桌面版 CreditDaddy": "Requires CreditDaddy desktop",
-  "未找到豆包桌面版（请先安装）": "Doubao desktop not found (please install it first)"
+  "未找到豆包桌面版（请先安装）": "Doubao desktop not found (please install it first)",
+  "打开豆包": "Open Doubao",
+  "<button class=\"btn\" disabled title=\"需要桌面版 CreditDaddy\">打开豆包</button>": "<button class=\"btn\" disabled title=\"Requires CreditDaddy desktop\">Open Doubao</button>"
 }

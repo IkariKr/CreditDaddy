@@ -1775,5 +1775,7 @@
   "无法启动豆包客户端": "無法啟動豆包客戶端",
   "打开豆包客户端（签到请在客户端内完成）": "打開豆包客戶端（簽到請在客戶端內完成）",
   "需要桌面版 CreditDaddy": "需要桌面版 CreditDaddy",
-  "未找到豆包桌面版（请先安装）": "未找到豆包桌面版（請先安裝）"
+  "未找到豆包桌面版（请先安装）": "未找到豆包桌面版（請先安裝）",
+  "打开豆包": "打開豆包",
+  "<button class=\"btn\" disabled title=\"需要桌面版 CreditDaddy\">打开豆包</button>": "<button class=\"btn\" disabled title=\"需要桌面版 CreditDaddy\">打開豆包</button>"
 }

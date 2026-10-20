@@ -2561,6 +2561,17 @@ function renderFreePool() {
       + ' <button class="btn" id="free-show-all" style="padding:2px 10px;font-size:12px">' + T('全部显示') + '</button></div>'
     : '')
   + visibleSites.map((site) => {
+    // entryOnly 站点（豆包）：纯快捷入口卡——只出「打开」按钮与说明，无捕获/账号
+    if (site.entryOnly === true) {
+      const openBtn = canCapture
+        ? '<button class="btn primary" data-open-doubao="1">' + I.play + T('打开豆包') + '</button>'
+        : T('<button class="btn" disabled title="需要桌面版 CreditDaddy">打开豆包</button>');
+      return '<div class="card" style="display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:14px 16px;background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;box-shadow:var(--shadow)">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'
+        + '<span style="font-size:14px;font-weight:700">' + esc(site.label || site.name) + '</span>' + openBtn + '</div>'
+        + (site.hint ? '<div class="hint" style="margin:2px 0 0">' + esc(T(site.hint)) + '</div>' : '')
+        + '</div>';
+    }
     const rows = site.accounts || [];
     const stateTxt = rows.length
       ? T('<span class="badge ok">已捕获 ') + rows.length + T(' 个会话</span>')
