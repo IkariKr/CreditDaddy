@@ -92,6 +92,8 @@ test('buildMiniMaxPayload：存量行（used=0 / total=余额 / displayRemaining
   assert.equal(p.quotas.acc1.total, 1234.5);
   assert.equal(p.quotas.acc1.displayRemaining, true);
   assert.equal(p.quotas.acc1.resetAt, '2026-10-13T00:00:00Z');
+  // 算力币是储值余额：10R 按单值卡渲染，不画 X/Y 订阅进度条
+  assert.equal(p.quotas.acc1.isCreditBalance, true);
   assert.ok(p.quotas.acc2.total > 0, 'total 必须 >0（10Router positiveNumber）');
 });
 
