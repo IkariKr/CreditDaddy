@@ -774,19 +774,19 @@
         <span style="font-size:26px">⚡</span>
         <div style="font-weight:700">AiFaDian</div>
         <div class="hint" data-i18n="爱发电 · Power me ⚡">爱发电 · Power me ⚡</div>
-        <img src="/assets/donate-ifdian.svg" alt="AiFaDian" style="width:140px;height:140px;margin-top:auto;background:#fff;border-radius:8px;padding:6px;flex:none">
+        <img data-donate-qr="ifdian" src="/assets/donate-ifdian.svg" alt="AiFaDian" style="width:140px;height:140px;margin-top:auto;border-radius:8px;padding:6px;flex:none;background:var(--qr-pad,#fff)">
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
         <span style="font-size:26px">🅰️</span>
         <div style="font-weight:700">Alipay</div>
         <div class="hint" data-i18n="支付宝扫码打赏">支付宝扫码打赏</div>
-        <img src="/assets/donate-alipay.svg" alt="Alipay" style="width:140px;height:140px;margin-top:auto;background:#fff;border-radius:8px;padding:6px;flex:none">
+        <img data-donate-qr="alipay" src="/assets/donate-alipay.svg" alt="Alipay" style="width:140px;height:140px;margin-top:auto;border-radius:8px;padding:6px;flex:none;background:var(--qr-pad,#fff)">
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
         <span style="font-size:26px">💚</span>
         <div style="font-weight:700">WeChat Pay</div>
         <div class="hint" data-i18n="微信扫码打赏">微信扫码打赏</div>
-        <img src="/assets/donate-wechat.svg" alt="WeChat Pay" style="width:140px;height:140px;margin-top:auto;background:#fff;border-radius:8px;padding:6px;flex:none">
+        <img data-donate-qr="wechat" src="/assets/donate-wechat.svg" alt="WeChat Pay" style="width:140px;height:140px;margin-top:auto;border-radius:8px;padding:6px;flex:none;background:var(--qr-pad,#fff)">
       </div>
     </div>
     <div class="modal-actions"><button class="btn primary" data-close data-i18n="关闭">关闭</button></div>
@@ -1345,6 +1345,7 @@ applyLogsDisplay(logsDisplayDefault());
 // 由 renderThemeMode() 反映到菜单里的分段控件（主题只有那一个入口）。
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
+  applyDonateQrTheme(t);
 }
 function initTheme() {
   let t = null;
@@ -1441,6 +1442,15 @@ function initTheme() {
   // 需要跟随系统走菜单里的三态分段控件。
   const themeBtn = $('btn-theme');
   function resolvedTheme() { return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'; }
+  function applyDonateQrTheme(theme) {
+    const dark = theme === 'dark';
+    const suffix = dark ? '-dark' : '';
+    document.querySelectorAll('[data-donate-qr]').forEach((img) => {
+      const base = img.dataset.donateQr;
+      img.src = '/assets/donate-' + base + suffix + '.svg?v=2';
+    });
+    document.documentElement.style.setProperty('--qr-pad', dark ? '#232328' : '#fff');
+  }
   function renderThemeButton() {
     if (!themeBtn) return;
     const cur = resolvedTheme();
