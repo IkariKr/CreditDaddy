@@ -1049,6 +1049,16 @@ const COMPONENTS = [
   { id: 'free', label: '网页会话' },
   { id: 'tenrouter', label: '10Router' },
 ];
+// 捐赠二维码随日夜主题切换（顶层定义：applyTheme 的调用早于原块级定义，块内 function 不可达）
+function applyDonateQrTheme(theme) {
+  const dark = theme === 'dark';
+  const suffix = dark ? '-dark' : '';
+  document.querySelectorAll('[data-donate-qr]').forEach((img) => {
+    const base = img.dataset.donateQr;
+    img.src = '/assets/donate-' + base + suffix + '.svg?v=2';
+  });
+  document.documentElement.style.setProperty('--qr-pad', dark ? '#232328' : '#fff');
+}
 const HIDDEN_COMP_KEY = 'qd_hidden_components';
 const DEFAULT_HIDDEN_COMP = ['catpaw'];   // 妙手默认收起，右上角设置里可打开
 state.hidden = (() => {
@@ -1345,7 +1355,7 @@ applyLogsDisplay(logsDisplayDefault());
 // 由 renderThemeMode() 反映到菜单里的分段控件（主题只有那一个入口）。
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
-  applyDonateQrTheme(t);
+  if (typeof applyDonateQrTheme === 'function') { try { applyDonateQrTheme(t); } catch {} }
 }
 function initTheme() {
   let t = null;
@@ -1442,15 +1452,7 @@ function initTheme() {
   // 需要跟随系统走菜单里的三态分段控件。
   const themeBtn = $('btn-theme');
   function resolvedTheme() { return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'; }
-  function applyDonateQrTheme(theme) {
-    const dark = theme === 'dark';
-    const suffix = dark ? '-dark' : '';
-    document.querySelectorAll('[data-donate-qr]').forEach((img) => {
-      const base = img.dataset.donateQr;
-      img.src = '/assets/donate-' + base + suffix + '.svg?v=2';
-    });
-    document.documentElement.style.setProperty('--qr-pad', dark ? '#232328' : '#fff');
-  }
+
   function renderThemeButton() {
     if (!themeBtn) return;
     const cur = resolvedTheme();
