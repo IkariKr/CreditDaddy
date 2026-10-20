@@ -233,7 +233,7 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
     if (noProbeMark || !a?.id) return;
     import('./store.js').then(({ withAccounts }) => withAccounts((list) => {
       const hit = list.find((x) => x.id === a.id);
-      if (hit) hit.meta = { ...(hit.meta || {}), lastProbe: { ok: false, status: 'dead', error: String(error || '限流').slice(0, 200), at: new Date().toISOString() } };
+      if (hit) hit.meta = { ...(hit.meta || {}), lastProbe: { ok: false, status: 'dead', error: String(error || '').slice(0, 200), at: new Date().toISOString() } };
     })).catch(() => {});
   };
   // live 余额落库（面板 /quota 缓存路径的数据源）：推送循环每轮 live 拉到的数字顺手写回
