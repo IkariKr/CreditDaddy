@@ -58,3 +58,39 @@ export async function fetchInceptionUsage(cookie) {
     isFreeTier: body?.isFreeTier === true,
   };
 }
+
+/**
+ * 组装 Inception 免费额度的 10Router external-quota 载荷（tokens 储值计数卡）。
+ * 单号单 source（账号 uid/短 id 后缀），label = 账号别名（10R「同名认领」匹配键）。
+ * @param {{ name?: string, id?: string, uid?: string, meta?: object }} account
+ * @param {{ used: number, total: number, remaining: number, expiresAt: string|null }|null} liveData
+ *   live 拉取成功的数据；null 时回退 meta.quotaSnapshot（陈粮标注由 10R 快照 TTL 兜底）
+ */
+export function buildInceptionQuotaPayload(account, liveData = null) {
+  const short = String(account?.uid || account?.id || 'default').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24);
+  const source = `inception-${short}`.slice(0, 32);
+  const nameStr = String(account?.name || '').trim();
+  const snap = liveData || (account?.meta?.quotaSnapshot?.total != null
+    ? { used: account.meta.quotaSnapshot.used || 0, total: account.meta.quotaSnapshot.total, remaining: Math.max(account.meta.quotaSnapshot.total - (account.meta.quotaSnapshot.used || 0), 0), expiresAt: account.meta.quotaSnapshot.expiresAt || null }
+    : null);
+  if (!snap || !Number.isFinite(Number(snap.total)) || Number(snap.total) <= 0) {
+    return {
+      source,
+      payload: { provider: 'inception', label: (nameStr || 'Inception Labs').slice(0, 100), message: 'Inception 额度暂不可查（请重新捕获或稍后重试）' },
+    };
+  }
+  const total = Number(snap.total);
+  const used = Number(snap.used) || 0;
+  const row = {
+    name: (nameStr || 'Inception Labs').slice(0, 80),
+    used,
+    total,
+    displayRemaining: true,
+    recurring: false,
+    ...(snap.expiresAt ? { expiresAt: snap.expiresAt } : {}),
+  };
+  return {
+    source,
+    payload: { provider: 'inception', label: (nameStr || 'Inception Labs 免费额度').slice(0, 100), quotas: { q0: row }, plan: 'Free' },
+  };
+}

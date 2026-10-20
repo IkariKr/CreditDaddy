@@ -264,6 +264,39 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
 
   // 1. tokenharbor（issue #24：TH 免费额度网页读数）
   const thAccounts = (accounts || []).filter((a) => a.provider === 'tokenharbor' && a.meta?.cookieSiteId);
+  // 1b. inception（Inception Labs 免费 tokens，单号单 source；用户明确要求推 10R）
+  const incepAccounts = (accounts || []).filter((a) => a.provider === 'inception' && (a.meta?.cookieSiteSession?.cookie || a.token));
+  if (incepAccounts.length) {
+    const { fetchInceptionUsage, buildInceptionQuotaPayload } = await import('./inceptionClient.js');
+    for (const a of incepAccounts) {
+      const { source } = buildInceptionQuotaPayload(a);
+      if (only && !only.includes(source)) continue;
+      const skipDead = !only && deadSkip(a);
+      let liveData = null;
+      if (!skipDead) {
+        try {
+          const u = await fetchInceptionUsage(a.meta?.cookieSiteSession?.cookie || a.token);
+          if (u.ok) {
+            liveData = { used: u.used, total: u.total, remaining: u.remaining, expiresAt: u.expiresAt };
+            persistLive(a, { quotaSnapshot: { used: u.used, total: u.total, isCreditBalance: false, at: new Date().toISOString(), ...(u.expiresAt ? { expiresAt: u.expiresAt } : {}) } });
+          } else liveData = null;
+          probeMark(a, u.ok, u.error);
+        } catch (err) {
+          probeMark(a, false, err.message);
+        }
+      }
+      const { payload } = buildInceptionQuotaPayload(a, liveData);
+      try {
+        assertScalarOnly(payload, source);
+        const r = await pushOne({ endpoint, key, source, payload, fetchImpl, refreshUrl: await rurl(source) });
+        results.push({ source, status: 'ok', entries: r.entries });
+        logger.info('10R', '额度卡已推送：{source}（{n} 行）', { source, n: r.entries ?? (Object.keys(payload.quotas || {}).length || 0) });
+      } catch (e) {
+        results.push({ source, status: 'failed', error: e.message });
+        logger.warn('10R', '额度卡推送失败 {source}:{err}', { source, err: e.message });
+      }
+    }
+  }
   if (thAccounts.length && (!only || only.includes('tokenharbor'))) {
     try {
       const payload = buildTokenHarborPayload(thAccounts);

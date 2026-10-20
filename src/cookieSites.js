@@ -172,6 +172,7 @@ export const COOKIE_SITES = [
       accept: 'application/json, text/plain, */*',
     },
     verify: 'api',
+    no10rSync: true,   // 豆包不推 10R 外部配额卡（无对应提供商线），捕获文案不带「同步 10Router」
     accountName: '豆包网页会话',
     hint: '登录 doubao.com 后自动抓取体验额度与每日签到状态（+200/天，服务端幂等）；仅个人账号可参与（飞书企业号被排除）；凭据只存本机。',
   },

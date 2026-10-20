@@ -1767,5 +1767,10 @@
   "Inception 会话已失效（被重定向回登录），请重新登录捕获": "Inception セッションが失効しました（ログインへリダイレクト）。再ログインして再取得してください",
   "Inception 用量接口 HTTP {status}": "Inception 使用量 API HTTP {status}",
   "Inception 用量接口返回无法解析（可能被边缘节点拦截，请检查代理出口）": "Inception 使用量 API の応答を解析できません（エッジノードに遮断された可能性。プロキシ出口を確認してください）",
-  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception 応答に limits.totalTokens がありません（API 形状が変わった可能性）"
+  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception 応答に limits.totalTokens がありません（API 形状が変わった可能性）",
+  "{name} cookie 捕获成功(探测通过,额度卡片已就绪)": "{name} cookie 取得成功(プローブ通過、カード準備完了)",
+  "Inception 额度暂不可查（请重新捕获或稍后重试）": "Inception クレジットを取得できません(再取得するか、後ほど再試行してください)",
+  "Inception Labs 免费额度": "Inception Labs 無料クレジット",
+  "{name} cookie 捕获成功，额度卡片已就绪": "{name} cookie 取得成功、カード準備完了",
+  "cookie 捕获成功，额度卡片已就绪": "cookie 取得成功、カード準備完了"
 }

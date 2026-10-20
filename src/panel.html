@@ -2784,7 +2784,10 @@ async function cookieSitePasteCapture(siteId) {
   try {
     const r = await api('/api/cookie-sites/' + encodeURIComponent(siteId) + '/capture', { json: { cookie: cookie.trim() } });
     if (r && r.ok) {
-      toast(T('{name} cookie 捕获成功，同步到 10Router 后卡片点亮', { name: site.name }), true);
+      // 豆包不推 10R（无外部配额卡），文案不带「同步 10Router」以免误导
+      toast(site.no10rSync
+        ? T('{name} cookie 捕获成功，额度卡片已就绪', { name: site.name })
+        : T('{name} cookie 捕获成功，同步到 10Router 后卡片点亮', { name: site.name }), true);
       state.cookieSites = null;
       loadCookieSites(true).then(() => { if (state.view === 'free') renderFreePool(); });
     } else toast(T('捕获失败'), false);
@@ -2800,7 +2803,10 @@ if (window.creditdaddy && typeof window.creditdaddy.onCookieCaptured === 'functi
   window.creditdaddy.onCookieCaptured((payload) => {
     if (payload && payload.ok === false) { toast(payload.error || T('cookie 捕获失败'), false); return; }
     const name = payload && payload.name;
-    toast(T('{name} cookie 捕获成功，同步到 10Router 后卡片点亮', { name: name || '' }), true);
+    const site2 = (state.cookieSites || []).find((s) => s.name === name) || null;
+    toast(site2?.no10rSync
+      ? T('{name} cookie 捕获成功，额度卡片已就绪', { name: name || '' })
+      : T('{name} cookie 捕获成功，同步到 10Router 后卡片点亮', { name: name || '' }), true);
     state.cookieSites = null;
     Promise.allSettled([loadCookieSites(true), refreshAccountList(), loadTrQuotas(true)])
       .then(() => {

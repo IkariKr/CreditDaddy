@@ -1361,7 +1361,7 @@ async function handleApi(req, res, url) {
       }
     });
     if (ih) logger.info('COOKIE-SITE', '{name} 身份归户({identity},账号轮换键生效)', { name: site.name, identity });
-    logger.info('COOKIE-SITE', '{name} cookie 捕获成功(探测通过,同步到 10Router 后卡片点亮)', { name: site.name });
+    logger.info('COOKIE-SITE', site.no10rSync ? '{name} cookie 捕获成功(探测通过,额度卡片已就绪)' : '{name} cookie 捕获成功(探测通过,同步到 10Router 后卡片点亮)', { name: site.name });
     // 捕获成功后只推当前站点的额度卡（单号精准推送，绝不全量刷屏）
     (async () => {
       try {
@@ -1384,6 +1384,9 @@ async function handleApi(req, res, url) {
             } else if (site.id === 'longcat') {
               const { buildLongcatQuotaPayload } = await import('./longcatClient.js');
               src = buildLongcatQuotaPayload(target).source;
+            } else if (site.id === 'inception') {
+              const { buildInceptionQuotaPayload } = await import('./inceptionClient.js');
+              src = buildInceptionQuotaPayload(target).source;
             }
             if (src) await tenrouter.pushQuotaCards({ onlySources: [src] });
           }

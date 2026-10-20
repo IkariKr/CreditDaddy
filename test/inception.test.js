@@ -66,3 +66,25 @@ test('inception 在 PROVIDERS 白名单且 cookieSites 配置齐备（收割上�
   assert.equal(site.provider, 'inception');
   assert.ok(site.probe.url.includes('/api/usage'));
 });
+
+test('buildInceptionQuotaPayload：正常数据 → tokens 计数卡（source 单号后缀）', async () => {
+  const r = await import('../src/inceptionClient.js');
+  const { source, payload } = r.buildInceptionQuotaPayload(
+    { id: 'acc-1', name: 'Inception 主号' },
+    { used: 12345, total: 100000000, remaining: 100000000 - 12345, expiresAt: null },
+  );
+  assert.match(source, /^inception-[a-z0-9-]+$/);
+  assert.equal(payload.provider, 'inception');
+  assert.equal(payload.plan, 'Free');
+  const row = payload.quotas.q0;
+  assert.equal(row.total, 100000000);
+  assert.equal(row.used, 12345);
+  assert.equal(row.displayRemaining, true);
+});
+
+test('buildInceptionQuotaPayload：无 live 无快照 → message 状态卡（不误报 0 余额）', async () => {
+  const r = await import('../src/inceptionClient.js');
+  const { payload } = r.buildInceptionQuotaPayload({ id: 'acc-2', name: 'X' }, null);
+  assert.ok(payload.message);
+  assert.equal(payload.quotas, undefined);
+});

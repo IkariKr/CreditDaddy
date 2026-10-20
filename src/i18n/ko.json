@@ -1767,5 +1767,10 @@
   "Inception 会话已失效（被重定向回登录），请重新登录捕获": "Inception 세션이 만료되었습니다(로그인으로 리디렉션). 다시 로그인하여 캡처하세요",
   "Inception 用量接口 HTTP {status}": "Inception 사용량 API HTTP {status}",
   "Inception 用量接口返回无法解析（可能被边缘节点拦截，请检查代理出口）": "Inception 사용량 API 응답을 파싱할 수 없습니다(엣지 노드 차단 가능성 — 프록시 출력을 확인하세요)",
-  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception 응답에 limits.totalTokens가 없습니다(API 형상 변경 가능)"
+  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception 응답에 limits.totalTokens가 없습니다(API 형상 변경 가능)",
+  "{name} cookie 捕获成功(探测通过,额度卡片已就绪)": "{name} cookie 캡처 성공(프로브 통과, 카드 준비됨)",
+  "Inception 额度暂不可查（请重新捕获或稍后重试）": "Inception 크레딧을 조회할 수 없습니다(다시 캡처하거나 나중에 재시도하세요)",
+  "Inception Labs 免费额度": "Inception Labs 무료 크레딧",
+  "{name} cookie 捕获成功，额度卡片已就绪": "{name} cookie 캡처 성공, 카드 준비됨",
+  "cookie 捕获成功，额度卡片已就绪": "cookie 캡처 성공, 카드 준비됨"
 }

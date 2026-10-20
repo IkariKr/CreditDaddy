@@ -1767,5 +1767,10 @@
   "Inception 会话已失效（被重定向回登录），请重新登录捕获": "Inception session expired (redirected to login), please sign in and capture again",
   "Inception 用量接口 HTTP {status}": "Inception usage API HTTP {status}",
   "Inception 用量接口返回无法解析（可能被边缘节点拦截，请检查代理出口）": "Inception usage API returned unparseable response (possibly blocked by edge node — check proxy egress)",
-  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception response missing limits.totalTokens (API shape may have changed)"
+  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception response missing limits.totalTokens (API shape may have changed)",
+  "{name} cookie 捕获成功(探测通过,额度卡片已就绪)": "{name} cookie captured (probe passed, card ready)",
+  "Inception 额度暂不可查（请重新捕获或稍后重试）": "Inception credits unavailable (re-capture or retry later)",
+  "Inception Labs 免费额度": "Inception Labs free credits",
+  "{name} cookie 捕获成功，额度卡片已就绪": "{name} cookie captured — card ready",
+  "cookie 捕获成功，额度卡片已就绪": "Cookie captured — card ready"
 }

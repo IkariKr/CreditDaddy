@@ -1767,5 +1767,10 @@
   "Inception 会话已失效（被重定向回登录），请重新登录捕获": "Inception 會話已失效（被重新導向回登入），請重新登入擷取",
   "Inception 用量接口 HTTP {status}": "Inception 用量介面 HTTP {status}",
   "Inception 用量接口返回无法解析（可能被边缘节点拦截，请检查代理出口）": "Inception 用量介面傳回無法解析（可能被邊緣節點攔截，請檢查代理出口）",
-  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception 回應缺少 limits.totalTokens（介面形狀可能已變化）"
+  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception 回應缺少 limits.totalTokens（介面形狀可能已變化）",
+  "{name} cookie 捕获成功(探测通过,额度卡片已就绪)": "{name} cookie 擷取成功(探測通過,額度卡片已就緒)",
+  "Inception 额度暂不可查（请重新捕获或稍后重试）": "Inception 額度暫不可查（請重新擷取或稍後重試）",
+  "Inception Labs 免费额度": "Inception Labs 免費額度",
+  "{name} cookie 捕获成功，额度卡片已就绪": "{name} cookie 擷取成功，額度卡片已就緒",
+  "cookie 捕获成功，额度卡片已就绪": "cookie 擷取成功，額度卡片已就緒"
 }

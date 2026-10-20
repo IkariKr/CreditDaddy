@@ -807,7 +807,7 @@ async function harvestCookieSiteSession(ses, site) {
   if (harvestErr) notify(site.name, Tt('cookie 收割上报失败：{err}', { err: harvestErr }));
   if (r && r.ok) {
     try { if (win && !win.isDestroyed()) win.webContents.send('cookie-site:captured', { site: site.id, name: site.name, ok: true }); } catch { /* ignore */ }
-    notify(site.name, Tt('cookie 捕获成功，同步到 10Router 后卡片点亮'));
+    notify(site.name, Tt(site.no10rSync ? 'cookie 捕获成功，额度卡片已就绪' : 'cookie 捕获成功，同步到 10Router 后卡片点亮'));
   } else {
     const detail = r ? await r.json().catch(() => ({})) : {};
     const errText = (detail && detail.error) || Tt('cookie 捕获被拒：会话探测未通过，请重新登录后再试');
