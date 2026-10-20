@@ -6,6 +6,33 @@
 
 ## [Unreleased]
 
+- 【已排期·双侧】MiniMax 签到徽章 10Router 消费侧（10R#77）：external-quota 白名单放行 `checkinToday` / `streakDays` + 卡面「今日已签」徽章；CD 出口已随 1.6.0 发出。
+
+---
+
+## [1.6.0] (2026-10-20)
+
+本版主题:**Trae 9074 换设备号重试（#31）+ WorkBuddy 国际版「活跃领取」机制下线 + 豆包每日签到第 8 产品线（#32）+ MiniMax 免费额度卡回归 10Router 并带只读签到状态（#33 方案 B）**。
+
+### ✨ 新功能
+
+- **豆包（doubao.com）每日签到接入（issue #32，第 8 条产品线，网页会话捕获线）**:接口形状经 CDP 调试端口两轮实测（已签 + 未签场景）——`POST /alice/ug/campaign/v3/detail/` 查状态、`POST /alice/ug/campaign/landing/checkin` 领取（+200 额度/天）；纯 cookie 鉴权、无 a_bogus/msToken 签名风控、服务端幂等（重复领取 `idempotent:true` 归 already）；cookieSites 探测框架升级支持 method/body（JSON API 探测先例）。参与门槛实测确认：**仅个人账号**（飞书企业号被排除，错误如实透出）；活动页「仅支持电脑版」为前端墙，接口不吃这套。
+- **MiniMax 免费额度卡回归 10Router + 只读签到状态推送（issue #33，方案 B）**:撤掉每轮推送对 minimax-code 卡片的清理（此前 10R 下架 minimax-free 后无挂靠点而停用），恢复推送并在每行配额带 `checkinToday` / `streakDays` 只读字段——凭据不出 CD，10R 只展示（徽章渲染由 10Router#77 消费，旧版 10R 忽略未知字段向前兼容）；**签到动作不进 10R**（只读边界）。新增 `fetchMiniMaxCheckinStatus` 只查不打 claim，失败返 null 不炸推送。
+- **WorkBuddy 临时活动批量领取**（ec95ffa，随本版首发）:新增 `POST /api/workbuddy/claim-activities` 批量领取临时活动（额外补偿 / 首月赠礼），面板一键领全部账号。
+- **网页会话探测频率治理**（ec95ffa，随本版首发）:面板 2 分钟轮询不再全量轰上游，`/quota` 默认读缓存快照，仅手动「刷新积分」真探；后台推送循环顺手保鲜快照。
+
+### 🐛 修复
+
+- **Trae 签到 9074 换设备号重试（issue #31 报告者实测路径）**:对照实验证实派生设备号被服务端一律拒 9074、同一时刻真机号可领——重试时**轮换派生设备号**（attempt 递增），退避 3s/8s/15s 叠加换号。⚠️ 派生 salt 变化使 attempt=0 默认指纹一次性全量轮换（旧号已被服务端标记，必要代价）：**升级后首轮签到若仍见 9074 属预期**，重试机制会自动换号，多轮后趋稳。
+- **更新日志弹窗体验**（f67c468 随本版首发）:点击即开窗带「加载中…」；在线拉取认「本版主题:」格式（1.5.1 条目此前只剩标题）。
+
+### 🔧 移除
+
+- **WorkBuddy 国际版「活跃领取」机制整体下线**（口径此前已定）:逐日主动打上游对话接口博活跃资格的灰色路径删除（服务端已收紧识别，issue #34 实证「请求非法」）——`checkinWorkbuddyIntl`、签到轮 wbActivity 开关与设置项、面板活跃统计 UI、行为测试与 18 条死词条 ×4 语全部清退；**workbuddy-intl 产品线保留**（登录 / 额度 / 赠送包余量 / 到期提醒 / 10R 推送照常），国内版每日签到不受影响。国际版积分获取引导改用官方网页版定时任务（codebuddy.ai/agents，#34 回复口径）。
+
+---
+
+
 - 【计划】Trae 签到 9074 设备号轮换重试（issue #31 报告者实测反馈）：派生设备号被服务端一律拒 9074、同一时刻真机设备号可领——9074 重试时轮换派生设备号（每号确定性 + attempt 参数，跨天稳定、账号间不碰撞），不再固定同号退避。
 - 【计划】彻底删除 WorkBuddy 国际版「活跃领取」线（用户指定下版本执行）：workbuddyClient 活跃探测/领取（checkinWorkbuddyIntl / no-activity 语义）、checkin 全局开关 wbActivity 与 daemon 设置项、面板「设置 → 通用」开关 UI、providers.js intl 分支、i18n 相关词条。口径已定（用户确认）：**只删「活跃领取」机制本体**，workbuddy-intl 产品线保留（workbuddy.ai 登录 / 用量查看照常），不动 constants PROVIDERS / tenrouterAccounts 映射 / transfer 别名 / authDevice 登录入口，无存量账号清理。
 
