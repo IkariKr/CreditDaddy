@@ -337,7 +337,7 @@ async function reprobeCookieAccount(site, a) {
       // 豆包（issue #32）：detail 接口一次拿全（会话有效性 + 签到状态 + 累计点数），
       // 重探 = 刷新额度快照；无 10R 同步（豆包不推外部配额卡，错误文案不再误导）
       const { fetchDoubaoStatus } = await import('./doubaoClient.js');
-      const st = await fetchDoubaoStatus(cookie).catch((e) => ({ auth: false, code: e?.message || 'network' }));
+      const st = await fetchDoubaoStatus(cookie, a.uid || '').catch((e) => ({ auth: false, code: e?.message || 'network' }));
       if (!st.auth) return finish({ id: a.id, name: a.name, ok: false, error: '豆包会话已失效，请重新登录捕获' });
       await withAccounts((list) => {
         const hit = list.find((x) => x.id === a.id);

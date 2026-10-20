@@ -12,6 +12,7 @@
  * 活动页 UI 有「仅支持豆包电脑版」前端墙，但接口不吃这套——cookie 直打即通。
  */
 
+import crypto from 'node:crypto';
 import { fetchJsonRace } from './zcodeClient.js';
 import { FETCH_TIMEOUT_MS } from './constants.js';
 
@@ -20,14 +21,54 @@ const CHECKIN_URL = 'https://www.doubao.com/alice/ug/campaign/landing/checkin';
 /** 任务面板所属活动组（pc 端激励任务 v3；签到是其中的 daily_signin 任务） */
 const CAMPAIGN_GROUP = 'pc_incentive_task_mvp_v3';
 
-const postJson = (url, cookie, body) => fetchJsonRace(url, {
+/**
+ * 客户端指纹伪装（issue #32 用户实测反馈：纯网页 cookie 裸 UA 打活动接口吃「请求非法」，
+ * 活动在服务端按客户端环境放行）。指纹 = 豆包桌面版 webview 的完整请求形状（CDP 抓包）：
+ *   - UA 与 webview 同款（Chrome/147 + DoubaoWebView 标识）
+ *   - URL 必带 version_code / device_platform=web / web_platform=desktop / aid 等平台参数
+ *   - web_id / tea_uuid 按账号 uid 确定性派生（每号一台稳定「设备」，同 attempt 语义）
+ *   - device_id 空（实测可过）
+ */
+const CLIENT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) DoubaoDesktop/2.32.6 Chrome/147.0.7727.149 Safari/537.36';
+const COMMON_PARAMS = {
+  version_code: '20800',
+  language: 'zh',
+  device_platform: 'web',
+  doubao_device_platform: 'web',
+  aid: '497858',
+  real_aid: '497858',
+  pkg_type: 'release_version',
+  pc_version: '2.32.6',
+  doubao_pc_version: '5.72.66',
+  samantha_web: '1',
+  web_platform: 'desktop',
+  'use-olympus-account': '1',
+  web_tab_id: '0',
+};
+
+/** 按 uid 派生稳定设备标识（每号恒定，账号间互异；纯数字 web_id 风格） */
+function deviceIdsFor(uid) {
+  const seed = crypto.createHash('sha256').update(`doubao-dev:${uid || 'anonymous'}`).digest();
+  const webId = '76' + [...seed.subarray(0, 8)].map((b) => b % 10).join('');          // 18 位数字
+  const teaUuid = [...seed.subarray(8, 16)].map((b) => (b % 10)).join('').padEnd(16, '7');
+  return { web_id: webId, tea_uuid: teaUuid };
+}
+
+/** 组装带客户端指纹的接口 URL */
+function apiUrl(base, uid) {
+  const params = new URLSearchParams({ ...COMMON_PARAMS, ...deviceIdsFor(uid), device_id: '', region: '', sys_region: '' });
+  return base + '?' + params.toString();
+}
+
+const postJson = (url, cookie, body, uid) => fetchJsonRace(url, {
   method: 'POST',
   headers: {
     Cookie: String(cookie || ''),
     'Content-Type': 'application/json',
     Accept: 'application/json, text/plain, */*',
     Referer: 'https://www.doubao.com/pc/agent-explore',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    Origin: 'https://www.doubao.com',
+    'User-Agent': CLIENT_UA,
   },
   body: JSON.stringify(body),
   timeoutMs: FETCH_TIMEOUT_MS,
@@ -47,8 +88,12 @@ function findCheckinTask(body) {
  * 签到状态 + 体验额度读数（detail 接口一次拿全）。
  * @returns {{ auth: boolean, code: number|string|null, checkin: { checkedIn: boolean, continuousDays: number, lastDate: string, rewardAmount: number }|null, totalAmount: number|null }}
  */
-export async function fetchDoubaoStatus(cookie) {
-  const res = await postJson(DETAIL_URL, cookie, { campaign_group_code: CAMPAIGN_GROUP });
+/**
+ * 签到状态 + 体验额度读数（detail 接口一次拿全）。uid 用于派生稳定设备指纹。
+ * @returns {{ auth: boolean, code: number|string|null, checkin: object|null, totalAmount: number|null }}
+ */
+export async function fetchDoubaoStatus(cookie, uid = '') {
+  const res = await postJson(apiUrl(DETAIL_URL, uid), cookie, { campaign_group_code: CAMPAIGN_GROUP }, uid);
   let body = null;
   try { body = JSON.parse(await res.text()); } catch { /* 非 JSON */ }
   if (!body || typeof body !== 'object') return { auth: false, code: `HTTP ${res.status}`, checkin: null, totalAmount: null };
@@ -79,9 +124,10 @@ export async function checkinDoubao(account) {
   const cookie = account.meta?.cookieSiteSession?.cookie || account.cookie;
   if (!cookie) return { ...base, status: 'failed', message: '缺少豆包会话 cookie（请重新登录捕获）' };
 
+  const uid = account.uid || '';
   let st;
   try {
-    st = await fetchDoubaoStatus(cookie);
+    st = await fetchDoubaoStatus(cookie, uid);
   } catch (e) {
     return { ...base, status: 'failed', message: e?.message || '网络错误' };
   }
@@ -100,7 +146,7 @@ export async function checkinDoubao(account) {
 
   let body = null;
   try {
-    const res = await postJson(CHECKIN_URL, cookie, { scene: CAMPAIGN_GROUP });
+    const res = await postJson(apiUrl(CHECKIN_URL, uid), cookie, { scene: CAMPAIGN_GROUP }, uid);
     const text = await res.text();
     body = JSON.parse(text);
   } catch (e) {
