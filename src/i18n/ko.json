@@ -1757,5 +1757,15 @@
   "打开 ↗": "열기 ↗",
   "爱发电 · Power me ⚡": "AiFaDian · Power me ⚡",
   "支付宝扫码打赏": "Alipay QR 팀",
-  "微信扫码打赏": "WeChat Pay QR 팀"
+  "微信扫码打赏": "WeChat Pay QR 팀",
+  "Inception 免费额度": "Inception 무료 크레딧",
+  "Inception 网页会话": "Inception 웹 세션",
+  "登录 platform.inceptionlabs.ai 后自动抓取免费额度（Free 100M tokens，Mercury 扩散模型）；⚠ 需先在「设置 → 网络出口」配代理（大陆 IP 直连被 Cloudflare 拦）；凭据只存本机。": "platform.inceptionlabs.ai 로그인 후 무료 크레딧(Free 100M 토큰, Mercury 확산 모델)을 자동으로 가져옵니다. ⚠ 프록시 아웃바운드 설정이 필요합니다(대륙 IP는 Cloudflare에서 차단). 자격 증명은 로컬에만 저장됩니다.",
+  "{name} 就地重探通过（已用 {used} / {total} tokens）": "{name} 재탐색 통과(사용 {used} / {total} 토큰)",
+  "网络错误（Inception 需代理出口，请检查网络出口配置）": "네트워크 오류(Inception은 프록시 아웃바운드 필요 — 네트워크 출력 설정을 확인하세요)",
+  "Inception 会话已失效，请重新登录捕获": "Inception 세션이 만료되었습니다. 다시 로그인하여 캡처하세요",
+  "Inception 会话已失效（被重定向回登录），请重新登录捕获": "Inception 세션이 만료되었습니다(로그인으로 리디렉션). 다시 로그인하여 캡처하세요",
+  "Inception 用量接口 HTTP {status}": "Inception 사용량 API HTTP {status}",
+  "Inception 用量接口返回无法解析（可能被边缘节点拦截，请检查代理出口）": "Inception 사용량 API 응답을 파싱할 수 없습니다(엣지 노드 차단 가능성 — 프록시 출력을 확인하세요)",
+  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception 응답에 limits.totalTokens가 없습니다(API 형상 변경 가능)"
 }

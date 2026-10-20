@@ -352,6 +352,24 @@ async function reprobeCookieAccount(site, a) {
       logger.info('COOKIE-SITE', '{name} 就地重探通过（累计 {amount} 点，签到{signed}）', { name: site.name, amount: st.totalAmount, signed: st.checkin?.checkedIn ? '已签' : '未签' });
       return finish({ id: a.id, name: a.name, ok: true, identity: null, balance: st.totalAmount, quotaSnapshot: { used: 0, total: st.totalAmount, isCreditBalance: true, at: now } });
     }
+    if (site.id === 'inception') {
+      // Inception Labs：usage 接口一次拿全（总量/已用/到期），重探 = 刷新快照
+      const { fetchInceptionUsage } = await import('./inceptionClient.js');
+      const u = await fetchInceptionUsage(cookie);
+      if (!u.ok) return finish({ id: a.id, name: a.name, ok: false, error: u.error });
+      await withAccounts((list) => {
+        const hit = list.find((x) => x.id === a.id);
+        if (!hit) return;
+        hit.meta = {
+          ...(hit.meta || {}),
+          cookieSiteSession: { cookie, capturedAt: hit.meta?.cookieSiteSession?.capturedAt || now },
+          quotaSnapshot: { used: u.used, total: u.total, isCreditBalance: false, at: now, ...(u.expiresAt ? { expiresAt: u.expiresAt } : {}) },
+        };
+        hit.updatedAt = now;
+      });
+      logger.info('COOKIE-SITE', '{name} 就地重探通过（已用 {used} / {total} tokens）', { name: site.name, used: u.used, total: u.total });
+      return finish({ id: a.id, name: a.name, ok: true, identity: null, balance: u.remaining, quotaSnapshot: { used: u.used, total: u.total, isCreditBalance: false, at: now } });
+    }
     if (site.verify === 'api' || site.probe) {
       // tokenharbor 等 HTML 探针站点：探测 + 身份 + 读数一并刷新
       const v = await verifySiteCookie(site, cookie);

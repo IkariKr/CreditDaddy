@@ -1757,5 +1757,15 @@
   "打开 ↗": "Open ↗",
   "爱发电 · Power me ⚡": "AiFaDian · Power me ⚡",
   "支付宝扫码打赏": "Alipay QR tip",
-  "微信扫码打赏": "WeChat Pay QR tip"
+  "微信扫码打赏": "WeChat Pay QR tip",
+  "Inception 免费额度": "Inception free credits",
+  "Inception 网页会话": "Inception web session",
+  "登录 platform.inceptionlabs.ai 后自动抓取免费额度（Free 100M tokens，Mercury 扩散模型）；⚠ 需先在「设置 → 网络出口」配代理（大陆 IP 直连被 Cloudflare 拦）；凭据只存本机。": "After signing in to platform.inceptionlabs.ai, free credits (Free 100M tokens, Mercury diffusion models) are captured automatically. ⚠ A proxy egress is required (Cloudflare blocks mainland IPs). Credentials stay on this machine.",
+  "{name} 就地重探通过（已用 {used} / {total} tokens）": "{name} reprobe OK (used {used} / {total} tokens)",
+  "网络错误（Inception 需代理出口，请检查网络出口配置）": "Network error (Inception requires a proxy egress — check network egress settings)",
+  "Inception 会话已失效，请重新登录捕获": "Inception session expired, please sign in and capture again",
+  "Inception 会话已失效（被重定向回登录），请重新登录捕获": "Inception session expired (redirected to login), please sign in and capture again",
+  "Inception 用量接口 HTTP {status}": "Inception usage API HTTP {status}",
+  "Inception 用量接口返回无法解析（可能被边缘节点拦截，请检查代理出口）": "Inception usage API returned unparseable response (possibly blocked by edge node — check proxy egress)",
+  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception response missing limits.totalTokens (API shape may have changed)"
 }

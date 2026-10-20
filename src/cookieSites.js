@@ -175,6 +175,25 @@ export const COOKIE_SITES = [
     accountName: '豆包网页会话',
     hint: '登录 doubao.com 后自动抓取体验额度与每日签到状态（+200/天，服务端幂等）；仅个人账号可参与（飞书企业号被排除）；凭据只存本机。',
   },
+  {
+    id: 'inception',
+    name: 'Inception Labs',
+    provider: 'inception',
+    label: 'Inception 免费额度',
+    loginUrl: 'https://platform.inceptionlabs.ai/dashboard/billing',
+    homeUrl: 'https://platform.inceptionlabs.ai',
+    // 探测 = 用量接口（GET /api/usage?quota=1，cookie 鉴权，用户 2026-10-20 抓包）：
+    // 已登录返 200 JSON（limits.totalTokens），未登录 401/重定向到登录页。
+    // ⚠ 必须配代理出口：Cloudflare 对大陆/部分亚太 IP 直接 403（与 Token Harbor 同款约束）。
+    probe: {
+      url: 'https://platform.inceptionlabs.ai/api/usage?quota=1',
+      match: '"totalTokens"',
+      accept: '*/*',
+    },
+    verify: 'api',
+    accountName: 'Inception 网页会话',
+    hint: '登录 platform.inceptionlabs.ai 后自动抓取免费额度（Free 100M tokens，Mercury 扩散模型）；⚠ 需先在「设置 → 网络出口」配代理（大陆 IP 直连被 Cloudflare 拦）；凭据只存本机。',
+  },
 ];
 
 export const getSite = (id) => COOKIE_SITES.find((s) => s.id === id) || null;

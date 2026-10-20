@@ -1757,5 +1757,15 @@
   "打开 ↗": "開く ↗",
   "爱发电 · Power me ⚡": "愛発電 · Power me ⚡",
   "支付宝扫码打赏": "Alipay QR チップ",
-  "微信扫码打赏": "WeChat Pay QR チップ"
+  "微信扫码打赏": "WeChat Pay QR チップ",
+  "Inception 免费额度": "Inception 無料クレジット",
+  "Inception 网页会话": "Inception ウェブセッション",
+  "登录 platform.inceptionlabs.ai 后自动抓取免费额度（Free 100M tokens，Mercury 扩散模型）；⚠ 需先在「设置 → 网络出口」配代理（大陆 IP 直连被 Cloudflare 拦）；凭据只存本机。": "platform.inceptionlabs.ai にログインすると、無料クレジット（Free 100M トークン、Mercury 拡散モデル）を自動取得します。⚠ プロキシ出口の設定が必要です（中国大陸 IP は Cloudflare に遮断されます）。認証情報はローカルにのみ保存されます。",
+  "{name} 就地重探通过（已用 {used} / {total} tokens）": "{name} 再プローブ成功（使用 {used} / {total} トークン）",
+  "网络错误（Inception 需代理出口，请检查网络出口配置）": "ネットワークエラー（Inception にはプロキシ出口が必要です。ネットワーク出口設定を確認してください）",
+  "Inception 会话已失效，请重新登录捕获": "Inception セッションが失効しました。再ログインして再取得してください",
+  "Inception 会话已失效（被重定向回登录），请重新登录捕获": "Inception セッションが失効しました（ログインへリダイレクト）。再ログインして再取得してください",
+  "Inception 用量接口 HTTP {status}": "Inception 使用量 API HTTP {status}",
+  "Inception 用量接口返回无法解析（可能被边缘节点拦截，请检查代理出口）": "Inception 使用量 API の応答を解析できません（エッジノードに遮断された可能性。プロキシ出口を確認してください）",
+  "Inception 响应缺少 limits.totalTokens（接口形状可能已变化）": "Inception 応答に limits.totalTokens がありません（API 形状が変わった可能性）"
 }
