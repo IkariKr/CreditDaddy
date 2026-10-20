@@ -2088,6 +2088,16 @@ document.addEventListener('click', async (e) => {
     renderFreePool();
     return;
   }
+  const doubaoBtn = e.target.closest('[data-open-doubao]');
+  if (doubaoBtn) {
+    if (window.creditdaddy && typeof window.creditdaddy.openDoubaoClient === 'function') {
+      window.creditdaddy.openDoubaoClient().then((r) => {
+        if (r && r.ok) toast(T('已启动豆包客户端'), true);
+        else toast((r && r.error) || T('无法启动豆包客户端'), false);
+      }).catch((err) => toast(String(err && err.message || err), false));
+    } else toast(T('需要桌面版 CreditDaddy'), false);
+    return;
+  }
   if (e.target.closest('#free-show-all')) {
     state.hiddenFreeSites.clear();
     saveHiddenFreeSites();
@@ -2654,7 +2664,7 @@ function renderFreePool() {
             + '</div>'
             + '<div style="display:flex;align-items:center;gap:8px;flex:none">'
             + '<span class="dim" style="font-size:11.5px">' + (acc.capturedAt ? esc(fmtTime(acc.capturedAt)) : '–') + '</span>'
-            + (site.id === 'doubao' ? '<button class="icon-btn" data-act="checkin" data-id="' + esc(acc.id) + '" title="' + T('每日签到（+200 额度）') + '">' + I.play + '</button>' : '')
+            + (site.id === 'doubao' && canCapture ? '<button class="icon-btn" data-open-doubao="1" title="' + T('打开豆包客户端（签到请在客户端内完成）') + '">' + I.play + '</button>' : '')
             + '<button class="icon-btn" data-act="reprobe" data-site="' + esc(site.id) + '" data-id="' + esc(acc.id) + '" title="' + T('就地重探（免登录，用已存会话刷新身份与额度）') + '">' + I.refresh + '</button>'
             + '<button class="icon-btn del" data-act="del" data-id="' + esc(acc.id) + '" title="' + T('删除此账号') + '">' + I.trash + '</button>'
             + '</div></div>'

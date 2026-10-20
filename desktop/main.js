@@ -1432,6 +1432,23 @@ function registerAuthWindowIpc() {
     } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
   });
   // Trae 页「打开客户端」+ 切换后自动重开（安装位置随版本不同：TRAE SOLO CN / Trae CN / TRAE SOLO / Trae）
+  ipcMain.handle('open-doubao-client', async () => {
+    try {
+      const os = require('node:os');
+      const fs = require('node:fs');
+      const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+      const cand = path.join(local, 'Programs', 'Doubao', 'Doubao.exe');
+      const cand2 = path.join(local, 'Doubao', 'Application', 'app', 'Doubao.exe');
+      for (const c of [cand, cand2]) {
+        if (process.platform === 'win32' && fs.existsSync(c)) {
+          const err = await shell.openPath(c);
+          if (!err) return { ok: true };
+        }
+      }
+      return { ok: false, error: Tt('未找到豆包桌面版（请先安装）') };
+    } catch (err) { return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
   ipcMain.handle('open-trae-client', async () => {
     try {
       const os = require('node:os');
