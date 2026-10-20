@@ -102,8 +102,54 @@ export function nextUtc8Midnight(now = new Date()) {
   return new Date((Math.floor(ms / dayMs) + 1) * dayMs - 8 * 3600_000).toISOString();
 }
 
+/** 生成单个 MiniMax 账号的外配额卡 source id */
+export function buildMiniMaxAccountSource(account) {
+  const rawId = account.uid || account.id || 'default';
+  const clean = String(rawId).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 18);
+  return `minimax-free-${clean || 'acc'}`.slice(0, 32);
+}
+
 /**
- * 组装 minimax-code 卡片载荷（issue #24 行字段建议 + issue #33 签到状态字段）：
+ * 组装单个 MiniMax 账号的单卡载荷（minimax-code 同款单值卡）：
+ * 单账号独立一张卡，卡面副标题为账号名称（如「主」、「备」），
+ * 单行 Credits 储值余额，右侧带有只读连续签到徽章。
+ */
+export function buildMiniMaxAccountPayload(account, quotaData, checkinData, { resetAt } = {}) {
+  const source = buildMiniMaxAccountSource(account);
+  const remaining = Number(quotaData?.remaining ?? quotaData?.total);
+  const label = String(account?.name || account?.uid || 'MiniMax').slice(0, 100);
+  const payload = {
+    provider: 'minimax-free',
+    label,
+    plan: quotaData?.plan || 'Free',
+  };
+
+  if (Number.isFinite(remaining) && !quotaData?.error) {
+    const row = {
+      name: 'Credits',
+      used: 0,
+      total: Math.max(remaining, 0) || 0.000001,
+      displayRemaining: true,
+      isCreditBalance: true,
+      recurring: true,
+      resetAt: resetAt || nextUtc8Midnight(),
+    };
+    if (checkinData) {
+      if (checkinData.checkedToday !== undefined) row.checkinToday = checkinData.checkedToday === true;
+      if (Number.isFinite(checkinData.streakDays) && checkinData.streakDays > 0) {
+        row.streakDays = checkinData.streakDays;
+      }
+    }
+    payload.quotas = { credits: row };
+  } else {
+    payload.message = quotaData?.error || t('MiniMax 账号额度暂不可查（凭据失效需在 CreditDaddy 重新登录，或官方接口异常稍后自动重试）');
+  }
+  assertScalarOnly(payload, source);
+  return { source, payload };
+}
+
+/**
+ * 组装 minimax-code 卡片载荷（历史兼容多行卡方法）：
  * 每账号一行「存量」——`used=0 / total=剩余算力币 / displayRemaining=true`，
  * `resetAt` 给次日零点（免费线每日刷新口径）。全部查询失败时降级为文字状态卡。
  * 每行可带只读签到状态（checkinToday / streakDays）——10R 白名单放行后卡面显示「今日已签」；
@@ -258,19 +304,29 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
     return Number.isFinite(at) && (Date.now() - at) < DEAD_RETRY_MS;
   };
 
-  // 0. minimax-code（issue #33 方案 B：算力币余额 + 只读签到状态推送——此前停用（10R 下架
-  //    minimax-free 后无挂靠点），现恢复：凭据不出 CD，10R 只展示；签到动作留在 CD）
+  // 0. minimax-free（单账号单卡，minimax-code 同款单值卡：带签到徽章）
   const mmAccounts = (accounts || []).filter((a) => a.provider === 'minimax' && (a.token || a.refreshToken));
-  if (mmAccounts.length && (!only || only.includes('minimax-free'))) {
-    try {
-      const { fetchMiniMaxQuota, fetchMiniMaxCheckinStatus } = await import('./minimaxClient.js');
-      const payload = await buildMiniMaxPayload(mmAccounts, (a) => fetchMiniMaxQuota(a), { fetchCheckin: (a) => fetchMiniMaxCheckinStatus(a) });
-      const r = await pushOne({ endpoint, key, source: 'minimax-free', payload, fetchImpl, refreshUrl: await rurl('minimax-free') });
-      results.push({ source: 'minimax-free', status: 'ok', entries: r.entries });
-      logger.info('10R', '额度卡已推送：minimax-code（{n} 行）', { n: r.entries ?? (Object.keys(payload.quotas || {}).length || 0) });
-    } catch (e) {
-      results.push({ source: 'minimax-free', status: 'failed', error: e.message });
-      logger.warn('10R', '额度卡推送失败 minimax-code:{err}', { err: e.message });
+  if (mmAccounts.length) {
+    const { fetchMiniMaxQuota, fetchMiniMaxCheckinStatus } = await import('./minimaxClient.js');
+    for (const a of mmAccounts) {
+      const { source } = buildMiniMaxAccountPayload(a, null);
+      if (only && !only.includes(source)) continue;
+      const skipDead = !only && deadSkip(a);
+      let q = null;
+      let c = null;
+      if (!skipDead) {
+        try { q = await fetchMiniMaxQuota(a); } catch (e) { q = { error: e.message }; }
+        try { c = await fetchMiniMaxCheckinStatus(a); } catch {}
+      }
+      const { payload } = buildMiniMaxAccountPayload(a, q, c);
+      try {
+        const r = await pushOne({ endpoint, key, source, payload, fetchImpl, refreshUrl: await rurl(source) });
+        results.push({ source, status: 'ok', entries: r.entries });
+        logger.info('10R', '额度卡已推送：{source}（{n} 行）', { source, n: r.entries ?? (Object.keys(payload.quotas || {}).length || 0) });
+      } catch (e) {
+        results.push({ source, status: 'failed', error: e.message });
+        logger.warn('10R', '额度卡推送失败 {source}:{err}', { source, err: e.message });
+      }
     }
   }
 

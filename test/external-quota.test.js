@@ -363,3 +363,20 @@ test('runQuotaPush：minimax 账号触发 minimax-free 推送（恢复此前停�
     assert.ok(push, '应有 minimax-free 推送 POST');
   } finally { globalThis.fetch = realFetch; }
 });
+
+test('buildMiniMaxAccountPayload：单账号单卡，单行 Credits 储值余额 + 签到状态', () => {
+  const account = { id: 'mm-12345', name: '主', uid: 'user_999' };
+  const q = { remaining: 2599.87, plan: 'Free' };
+  const c = { checkedToday: true, streakDays: 2 };
+  const { source, payload } = eq.buildMiniMaxAccountPayload(account, q, c);
+  assert.equal(source, 'minimax-free-user999');
+  assert.equal(payload.provider, 'minimax-free');
+  assert.equal(payload.label, '主');
+  assert.equal(payload.plan, 'Free');
+  assert.ok(payload.quotas.credits);
+  assert.equal(payload.quotas.credits.name, 'Credits');
+  assert.equal(payload.quotas.credits.total, 2599.87);
+  assert.equal(payload.quotas.credits.isCreditBalance, true);
+  assert.equal(payload.quotas.credits.checkinToday, true);
+  assert.equal(payload.quotas.credits.streakDays, 2);
+});
