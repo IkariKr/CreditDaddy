@@ -1748,5 +1748,14 @@
   "当前账号无签到任务（活动可能未开放，或飞书企业账号不支持参与）": "No check-in task for this account (event may not be open, or Feishu enterprise accounts are not eligible)",
   "签到接口返回无法解析": "Check-in API returned unparseable response",
   "今天已签到（服务端幂等去重）": "Already checked in today (server-side idempotent dedup)",
-  "每日签到": "Daily check-in"
+  "每日签到": "Daily check-in",
+  "{name} 就地重探通过（累计 {amount} 点，签到{signed}）": "{name} reprobe OK ({amount} pts total, check-in{signed})",
+  "已签": " done",
+  "未签": " pending",
+  "如果 CreditDaddy 对你有帮助，欢迎支持一下开发——免费渠道的每一行代码都是咖啡驱动的。": "If CreditDaddy helps you, consider supporting development — every line of the free channel is powered by coffee.",
+  "通过 Sponsors 支持": "Support via Sponsors",
+  "打开 ↗": "Open ↗",
+  "爱发电 · Power me ⚡": "AiFaDian · Power me ⚡",
+  "支付宝扫码打赏": "Alipay QR tip",
+  "微信扫码打赏": "WeChat Pay QR tip"
 }

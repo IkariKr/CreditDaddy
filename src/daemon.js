@@ -1918,6 +1918,20 @@ export async function startDaemon(port = DEFAULT_PORT, host = '127.0.0.1') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(panelHtml || '<h1>CreditDaddy</h1><p>panel.html 缺失</p>');
       }
+      // 静态资产（仅捐赠二维码三张 SVG；白名单精确匹配，面板密码门与面板一致）
+      if (url.pathname.startsWith('/assets/donate-')) {
+        const file = { '/assets/donate-alipay.svg': 'donate-alipay.svg', '/assets/donate-ifdian.svg': 'donate-ifdian.svg', '/assets/donate-wechat.svg': 'donate-wechat.svg' }[url.pathname];
+        if (!file) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Not Found'); }
+        if (!panelKeyRequired()) {
+          const remote = (req.socket && req.socket.remoteAddress) || '';
+          if (!isLoopbackSocketAddr(remote)) { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Forbidden'); }
+        }
+        try {
+          const svg = await fs.readFile(path.join(__dirname, 'assets', file));
+          res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+          return res.end(svg);
+        } catch { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Not Found'); }
+      }
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('Not Found');
     } catch (err) {

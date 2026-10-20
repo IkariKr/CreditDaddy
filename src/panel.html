@@ -764,6 +764,41 @@
   </div>
 </div>
 
+<!-- 捐赠支持（渠道与 10Router 一致：GitHub Sponsors / 爱发电 / 支付宝 / 微信；UI 照 CD 设计语言） -->
+<div class="mask" id="m-donate">
+  <div class="modal">
+    <div class="modal-title"><span data-i18n="捐赠支持">捐赠支持</span><button class="close" data-close>✕</button></div>
+    <div class="hint" data-i18n="如果 CreditDaddy 对你有帮助，欢迎支持一下开发——免费渠道的每一行代码都是咖啡驱动的。">如果 CreditDaddy 对你有帮助，欢迎支持一下开发——免费渠道的每一行代码都是咖啡驱动的。</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:14px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
+        <span style="font-size:26px">❤️</span>
+        <div style="font-weight:700" data-i18n="GitHub Sponsors">GitHub Sponsors</div>
+        <div class="hint" data-i18n="通过 Sponsors 支持">通过 Sponsors 支持</div>
+        <button class="btn" id="donate-open-sponsors" style="margin-top:auto" data-i18n="打开 ↗">打开 ↗</button>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
+        <span style="font-size:26px">⚡</span>
+        <div style="font-weight:700">AiFaDian</div>
+        <div class="hint" data-i18n="爱发电 · Power me ⚡">爱发电 · Power me ⚡</div>
+        <img src="/assets/donate-ifdian.svg" alt="AiFaDian" style="width:150px;height:150px;margin-top:auto;background:#fff;border-radius:8px;padding:4px">
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
+        <span style="font-size:26px">🅰️</span>
+        <div style="font-weight:700">Alipay</div>
+        <div class="hint" data-i18n="支付宝扫码打赏">支付宝扫码打赏</div>
+        <img src="/assets/donate-alipay.svg" alt="Alipay" style="width:150px;height:150px;margin-top:auto;background:#fff;border-radius:8px;padding:4px">
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border-subtle);border-radius:10px">
+        <span style="font-size:26px">💚</span>
+        <div style="font-weight:700">WeChat Pay</div>
+        <div class="hint" data-i18n="微信扫码打赏">微信扫码打赏</div>
+        <img src="/assets/donate-wechat.svg" alt="WeChat Pay" style="width:150px;height:150px;margin-top:auto;background:#fff;border-radius:8px;padding:4px">
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn primary" data-close data-i18n="关闭">关闭</button></div>
+  </div>
+</div>
+
 <!-- 10Router 设置 -->
 <div class="mask" id="m-10r">
   <div class="modal">
@@ -1440,13 +1475,16 @@ function initTheme() {
     else window.open(url, '_blank');
   };
 
-  // 捐赠（桌面版走 IPC 桥；网页直接开浏览器）
-  $('donate-btn').onclick = () => {
-    closeHmenu();
+  // 捐赠：弹窗展示四渠道（GitHub Sponsors / 爱发电 / 支付宝 / 微信，与 10Router 一致）；
+  // Sponsors 按钮跳转（桌面版走 IPC 桥，网页直接开浏览器）
+  const openSponsors = () => {
     if (window.creditdaddy && typeof window.creditdaddy.shellOpen === 'function')
       window.creditdaddy.shellOpen('https://github.com/sponsors/techysy');
-    else window.open('https://github.com/sponsors/techysy', '_blank');
+    else window.open('https://github.com/sponsors/techysy', '_blank', 'noopener');
   };
+  $('donate-btn').onclick = () => { closeHmenu(); openModal('m-donate'); };
+  const sponsorsBtn2 = $('donate-open-sponsors');
+  if (sponsorsBtn2) sponsorsBtn2.onclick = openSponsors;
 }
 
 // ── 状态 / 渲染 ──
