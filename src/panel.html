@@ -2531,19 +2531,20 @@ function renderFreePool() {
   const sites = state.cookieSites;
   const canCapture = Boolean(window.creditdaddy && typeof window.creditdaddy.openAuthWindow === 'function');
   if (!sites) { body.innerHTML = T('<div class="dim">加载中…</div>'); loadCookieSites().then(() => renderFreePool()); return; }
-  const totalAccounts = sites.reduce((sum, s) => sum + (s.accounts?.length || 0), 0);
+  const enabledSites = sites.filter((s) => s.disabled !== true);
+  const totalAccounts = enabledSites.reduce((sum, s) => sum + (s.accounts?.length || 0), 0);
   if ($('free-total-count')) $('free-total-count').textContent = totalAccounts;
-  if ($('free-sites-count')) $('free-sites-count').textContent = sites.length;
+  if ($('free-sites-count')) $('free-sites-count').textContent = enabledSites.length;
   if ($('cnt-free')) $('cnt-free').textContent = totalAccounts;
 
-  if (!sites.length) {
+  if (!enabledSites.length) {
     body.innerHTML = T('<div class="muted-empty">暂无可捕获的供应商</div>');
     return;
   }
 
-  const hiddenCount = sites.filter((s) => !freeVisible(s.id)).length;
+  const hiddenCount = enabledSites.filter((s) => !freeVisible(s.id)).length;
   const showHiddenBar = hiddenCount > 0;
-  const visibleSites = orderedFreeSites(sites).filter((s) => freeVisible(s.id));
+  const visibleSites = orderedFreeSites(sites).filter((s) => freeVisible(s.id) && s.disabled !== true);
 
   body.innerHTML = (showHiddenBar
     ? T('<div class="hint" style="grid-column:1/-1;display:flex;align-items:center;gap:8px">') + T('{n} 个站点已隐藏', { n: hiddenCount })
