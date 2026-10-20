@@ -40,7 +40,7 @@ export async function fetchInceptionUsage(cookie) {
     return { ok: false, error: e?.message || '网络错误（Inception 需代理出口，请检查网络出口配置）' };
   }
   if (res.status === 401 || res.status === 403) return { ok: false, auth: true, error: 'Inception 会话已失效，请重新登录捕获' };
-  if (res.status === 429) return { ok: false, error: 'Inception 被限流（429，Cloudflare 对代理 IP 限速）——请稍后再试或更换代理节点' };
+  if (res.status === 429) return { ok: false, rateLimited: true, error: 'Inception 被限流（429，Cloudflare 对代理 IP 限速）——请稍后再试或更换代理节点' };
   if (res.status === 302 || res.status === 303) return { ok: false, auth: true, error: 'Inception 会话已失效（被重定向回登录），请重新登录捕获' };
   if (!res.ok) return { ok: false, error: `Inception 用量接口 HTTP ${res.status}` };
   let body = null;

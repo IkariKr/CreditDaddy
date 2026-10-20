@@ -229,6 +229,13 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
       if (hit) hit.meta = { ...(hit.meta || {}), lastProbe: { ok: Boolean(ok), status, error: ok ? null : String(error || '').slice(0, 200), at: new Date().toISOString() } };
     })).catch(() => {});
   };
+  const markRateLimited = (a, error) => {
+    if (noProbeMark || !a?.id) return;
+    import('./store.js').then(({ withAccounts }) => withAccounts((list) => {
+      const hit = list.find((x) => x.id === a.id);
+      if (hit) hit.meta = { ...(hit.meta || {}), lastProbe: { ok: false, status: 'dead', error: String(error || '限流').slice(0, 200), at: new Date().toISOString() } };
+    })).catch(() => {});
+  };
   // live 余额落库（面板 /quota 缓存路径的数据源）：推送循环每轮 live 拉到的数字顺手写回
   // meta.quotaSnapshot + 各家明细字段，缓存随推送节奏（默认 60 分钟）保鲜。无条件落盘——
   // 回调路径（quota-refresh → onlySource）拿的也是真数据，没理由只落 lastProbe 不落数字。
@@ -279,7 +286,12 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
           if (u.ok) {
             liveData = { used: u.used, total: u.total, remaining: u.remaining, expiresAt: u.expiresAt };
             persistLive(a, { quotaSnapshot: { used: u.used, total: u.total, isCreditBalance: false, at: new Date().toISOString(), ...(u.expiresAt ? { expiresAt: u.expiresAt } : {}) } });
-          } else liveData = null;
+          } else {
+            liveData = null;
+            // 429 = Cloudflare 对代理 IP 限速（按 /api/ 路径规则，实测持续命中）——
+            // 记入探活痕迹走 dead 6h 低频重试，别每轮推送都撞限速墙
+            if (u.rateLimited) markRateLimited(a, u.error);
+          }
           probeMark(a, u.ok, u.error);
         } catch (err) {
           probeMark(a, false, err.message);
