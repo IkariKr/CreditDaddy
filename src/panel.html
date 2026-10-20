@@ -1057,7 +1057,7 @@ function applyDonateQrTheme(theme) {
     const base = img.dataset.donateQr;
     img.src = '/assets/donate-' + base + suffix + '.svg?v=2';
   });
-  document.documentElement.style.setProperty('--qr-pad', dark ? '#232328' : '#fff');
+  document.documentElement.style.setProperty('--qr-pad', 'transparent');
 }
 const HIDDEN_COMP_KEY = 'qd_hidden_components';
 const DEFAULT_HIDDEN_COMP = ['catpaw'];   // 妙手默认收起，右上角设置里可打开
