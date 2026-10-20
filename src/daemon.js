@@ -1933,7 +1933,7 @@ export async function startDaemon(port = DEFAULT_PORT, host = '127.0.0.1') {
           }
         }
         if (!panelHtml) { try { panelHtml = await fs.readFile(PANEL_FILE, 'utf8'); } catch {} }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
         return res.end(panelHtml || '<h1>CreditDaddy</h1><p>panel.html 缺失</p>');
       }
       // 静态资产（仅捐赠二维码三张 SVG；白名单精确匹配，面板密码门与面板一致）
