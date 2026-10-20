@@ -333,6 +333,25 @@ async function reprobeCookieAccount(site, a) {
       logger.info('COOKIE-SITE', '{name} 就地重探通过（{balance} USD）', { name: site.name, balance: bal.balance });
       return finish({ id: a.id, name: a.name, ok: true, identity: null, balance: bal.balance, quotaSnapshot: { used: 0, total: bal.balance, isCreditBalance: true, at: now } });
     }
+    if (site.id === 'doubao') {
+      // 豆包（issue #32）：detail 接口一次拿全（会话有效性 + 签到状态 + 累计点数），
+      // 重探 = 刷新额度快照；无 10R 同步（豆包不推外部配额卡，错误文案不再误导）
+      const { fetchDoubaoStatus } = await import('./doubaoClient.js');
+      const st = await fetchDoubaoStatus(cookie).catch((e) => ({ auth: false, code: e?.message || 'network' }));
+      if (!st.auth) return finish({ id: a.id, name: a.name, ok: false, error: '豆包会话已失效，请重新登录捕获' });
+      await withAccounts((list) => {
+        const hit = list.find((x) => x.id === a.id);
+        if (!hit) return;
+        hit.meta = {
+          ...(hit.meta || {}),
+          cookieSiteSession: { cookie, capturedAt: hit.meta?.cookieSiteSession?.capturedAt || now },
+          quotaSnapshot: { used: 0, total: st.totalAmount, isCreditBalance: true, at: now },
+        };
+        hit.updatedAt = now;
+      });
+      logger.info('COOKIE-SITE', '{name} 就地重探通过（累计 {amount} 点，签到{signed}）', { name: site.name, amount: st.totalAmount, signed: st.checkin?.checkedIn ? '已签' : '未签' });
+      return finish({ id: a.id, name: a.name, ok: true, identity: null, balance: st.totalAmount, quotaSnapshot: { used: 0, total: st.totalAmount, isCreditBalance: true, at: now } });
+    }
     if (site.verify === 'api' || site.probe) {
       // tokenharbor 等 HTML 探针站点：探测 + 身份 + 读数一并刷新
       const v = await verifySiteCookie(site, cookie);
