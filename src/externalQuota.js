@@ -125,6 +125,9 @@ export async function buildMiniMaxPayload(accounts, fetchQuota, { resetAt, fetch
       used: 0,
       total: Math.max(remaining, 0) || 0.000001,   // total 必须 >0（10Router positiveNumber）；0 余额给最小正数让卡片显示「耗尽」
       displayRemaining: true,
+      // 算力币是储值余额不是订阅包：10R 按单值卡渲染（无 X/Y 进度条与重置倒计时，
+      // 与 minimax-code 订阅线 Credits 卡同款）。10R 旧版无此字段自动忽略。
+      isCreditBalance: true,
       recurring: true,
       resetAt: resetAt || nextUtc8Midnight(),
     };
@@ -271,44 +274,6 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
 
   // 1. tokenharbor（issue #24：TH 免费额度网页读数）
   const thAccounts = (accounts || []).filter((a) => a.provider === 'tokenharbor' && a.meta?.cookieSiteId);
-  // 1b. inception（Inception Labs 免费 tokens，单号单 source；用户明确要求推 10R）
-  const incepAccounts = (accounts || []).filter((a) => a.provider === 'inception' && (a.meta?.cookieSiteSession?.cookie || a.token));
-  if (incepAccounts.length) {
-    const { fetchInceptionUsage, buildInceptionQuotaPayload } = await import('./inceptionClient.js');
-    for (const a of incepAccounts) {
-      const { source } = buildInceptionQuotaPayload(a);
-      if (only && !only.includes(source)) continue;
-      const skipDead = !only && deadSkip(a);
-      let liveData = null;
-      if (!skipDead) {
-        try {
-          const u = await fetchInceptionUsage(a.meta?.cookieSiteSession?.cookie || a.token);
-          if (u.ok) {
-            liveData = { used: u.used, total: u.total, remaining: u.remaining, expiresAt: u.expiresAt };
-            persistLive(a, { quotaSnapshot: { used: u.used, total: u.total, isCreditBalance: false, at: new Date().toISOString(), ...(u.expiresAt ? { expiresAt: u.expiresAt } : {}) } });
-          } else {
-            liveData = null;
-            // 429 = Cloudflare 对代理 IP 限速（按 /api/ 路径规则，实测持续命中）——
-            // 记入探活痕迹走 dead 6h 低频重试，别每轮推送都撞限速墙
-            if (u.rateLimited) markRateLimited(a, u.error);
-          }
-          probeMark(a, u.ok, u.error);
-        } catch (err) {
-          probeMark(a, false, err.message);
-        }
-      }
-      const { payload } = buildInceptionQuotaPayload(a, liveData);
-      try {
-        assertScalarOnly(payload, source);
-        const r = await pushOne({ endpoint, key, source, payload, fetchImpl, refreshUrl: await rurl(source) });
-        results.push({ source, status: 'ok', entries: r.entries });
-        logger.info('10R', '额度卡已推送：{source}（{n} 行）', { source, n: r.entries ?? (Object.keys(payload.quotas || {}).length || 0) });
-      } catch (e) {
-        results.push({ source, status: 'failed', error: e.message });
-        logger.warn('10R', '额度卡推送失败 {source}:{err}', { source, err: e.message });
-      }
-    }
-  }
   if (thAccounts.length && (!only || only.includes('tokenharbor'))) {
     try {
       const payload = buildTokenHarborPayload(thAccounts);
@@ -320,6 +285,7 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
       logger.warn('10R', '额度卡推送失败 tokenharbor:{err}', { err: e.message });
     }
   }
+
 
   // 2. xiaomi-mimo（issue #26：小米 MiMo 控制台充值余额推送）
   const mimoAccounts = (accounts || []).filter((a) => (a.provider === 'xiaomi-mimo' || a.meta?.cookieSiteId === 'xiaomi-mimo') && a.token);

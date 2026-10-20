@@ -1384,9 +1384,6 @@ async function handleApi(req, res, url) {
             } else if (site.id === 'longcat') {
               const { buildLongcatQuotaPayload } = await import('./longcatClient.js');
               src = buildLongcatQuotaPayload(target).source;
-            } else if (site.id === 'inception') {
-              const { buildInceptionQuotaPayload } = await import('./inceptionClient.js');
-              src = buildInceptionQuotaPayload(target).source;
             }
             if (src) await tenrouter.pushQuotaCards({ onlySources: [src] });
           }

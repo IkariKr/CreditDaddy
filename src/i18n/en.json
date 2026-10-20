@@ -1779,5 +1779,6 @@
   "Inception 被限流（429，Cloudflare 对代理 IP 限速）——请稍后再试或更换代理节点": "Inception rate-limited (429, Cloudflare throttles proxy IPs) — retry later or switch proxy node",
   "<button class=\"btn\" disabled title=\"网页 cookie 无法参与该站活动（活动校验客户端环境）——等待桌面版凭据线\">登录捕获（暂不可用）</button>": "<button class=\"btn\" disabled title=\"Web cookies cannot join this site's campaign (client-environment check) — desktop credential line pending\">Capture (unavailable)</button>",
   "每日签到（+200 额度）": "Daily check-in (+200 credits)",
-  "当前代理：{url}（输入新值可更换，留空清除）": "Current proxy: {url} (enter a new value to change, leave empty to clear)"
+  "当前代理：{url}（输入新值可更换，留空清除）": "Current proxy: {url} (enter a new value to change, leave empty to clear)",
+  "【暂不可用，issue #35】Cloudflare 对代理出口 /api/* 持续 429、直连 403，网页会话线无法工作；待评估 API key 线（dashboard 可发 key）。已捕获账号数据保留。": "[Temporarily unavailable, issue #35] Cloudflare persistently 429s proxy egress on /api/* and 403s direct connections — the web-session line cannot work. An API-key line is under evaluation. Captured account data is preserved."
 }

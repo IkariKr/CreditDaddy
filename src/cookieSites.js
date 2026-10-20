@@ -194,8 +194,9 @@ export const COOKIE_SITES = [
       preferProxy: true,   // Cloudflare 按 IP 拦（直连 403 风控页），代理优先
     },
     verify: 'api',
+    disabled: true,    // issue #35：Cloudflare 对代理出口 /api/* 持续 429、直连 403——网页会话线不可用，待 API key 线评估
     accountName: 'Inception 网页会话',
-    hint: '登录 platform.inceptionlabs.ai 后自动抓取免费额度（Free 100M tokens，Mercury 扩散模型）；⚠ 需先在「设置 → 网络出口」配代理（大陆 IP 直连被 Cloudflare 拦）；凭据只存本机。',
+    hint: '【暂不可用，issue #35】Cloudflare 对代理出口 /api/* 持续 429、直连 403，网页会话线无法工作；待评估 API key 线（dashboard 可发 key）。已捕获账号数据保留。',
   },
 ];
 
