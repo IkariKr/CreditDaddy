@@ -297,7 +297,7 @@ test('自愈③：snapshotAgeTag——>24h 陈粮带时刻标注，新鲜/无时
   assert.equal(eq.snapshotAgeTag({ total: 1 }), '', '无 at 不标注');
 });
 
-// ── issue #33（方案 B）：minimax-code 恢复推送 + 只读签到状态字段 ──
+// ── issue #33（方案 B）：minimax-free 恢复推送 + 只读签到状态字段 ──
 
 test('buildMiniMaxPayload：注入 fetchCheckin 时每行带只读签到状态（checkinToday / streakDays）', async () => {
   const accounts = [
@@ -335,7 +335,7 @@ test('buildMiniMaxPayload：fetchCheckin 抛错 / 返回 null 时该行不带签
   for (const r of rows) assert.equal(r.checkinToday, undefined, '状态未知即不带字段');
 });
 
-test('runQuotaPush：minimax 账号触发 minimax-code 推送（恢复此前停用的分支）', async () => {
+test('runQuotaPush：minimax 账号触发 minimax-free 推送（恢复此前停用的分支）', async () => {
   const calls = [];
   const realFetch = globalThis.fetch;
   // 双端 mock（按 URL 分流）：agent.minimax.cn = 上游（额度 + 签到状态），127.0.0.1 = 10R 推送。
@@ -357,7 +357,7 @@ test('runQuotaPush：minimax 账号触发 minimax-code 推送（恢复此前停�
       accounts: [{ provider: 'minimax', name: 'MM', token: 'tok', refreshToken: 'r' }],
       fetchImpl,
     });
-    const push = calls.find((c) => c.url.includes('/minimax-code') && c.method === 'POST');
-    assert.ok(push, '应有 minimax-code 推送 POST');
+    const push = calls.find((c) => c.url.includes('/minimax-free') && c.method === 'POST');
+    assert.ok(push, '应有 minimax-free 推送 POST');
   } finally { globalThis.fetch = realFetch; }
 });

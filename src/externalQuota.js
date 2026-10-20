@@ -8,7 +8,7 @@
  *
  * 首批 source（issue #24「建议的首批接线」）：
  *  - `tokenharbor`  ：TH 免费额度网页读数（CD 已捕获的网页会话 → dashboard 解析）；
- *  - `minimax-code` ：MiniMax Code 免费线算力币/签到额度——10Router 的 minimax-free
+ *  - `minimax-free` ：MiniMax Code 免费线算力币/签到额度——挂在 10Router 的 minimax-free 提供商（订阅线 minimax-code 是 10R 自己的直连线，两者不同卡）
  *    路由卡走 CD 本地网关，配额只有 CD 查得到，推数字正好补它的盲区。
  *
  * 降级语义（issue #24）：会话失效 / 全部解析失败时改推 `message` 文字状态卡，
@@ -140,7 +140,7 @@ export async function buildMiniMaxPayload(accounts, fetchQuota, { resetAt, fetch
     }
     rows[rowKey(i)] = row;
   }
-  const payload = { provider: 'minimax-code', label: t('MiniMax Code 免费额度') };
+  const payload = { provider: 'minimax-free', label: t('MiniMax Code 免费额度') };
   if (Object.keys(rows).length) {
     payload.quotas = rows;
     payload.plan = 'Free';
@@ -148,7 +148,7 @@ export async function buildMiniMaxPayload(accounts, fetchQuota, { resetAt, fetch
   } else {
     payload.message = t('MiniMax 账号额度暂不可查（凭据失效需在 CreditDaddy 重新登录，或官方接口异常稍后自动重试）');
   }
-  assertScalarOnly(payload, 'minimax-code');
+  assertScalarOnly(payload, 'minimax-free');
   return payload;
 }
 
@@ -249,15 +249,15 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
   // 0. minimax-code（issue #33 方案 B：算力币余额 + 只读签到状态推送——此前停用（10R 下架
   //    minimax-free 后无挂靠点），现恢复：凭据不出 CD，10R 只展示；签到动作留在 CD）
   const mmAccounts = (accounts || []).filter((a) => a.provider === 'minimax' && (a.token || a.refreshToken));
-  if (mmAccounts.length && (!only || only.includes('minimax-code'))) {
+  if (mmAccounts.length && (!only || only.includes('minimax-free'))) {
     try {
       const { fetchMiniMaxQuota, fetchMiniMaxCheckinStatus } = await import('./minimaxClient.js');
       const payload = await buildMiniMaxPayload(mmAccounts, (a) => fetchMiniMaxQuota(a), { fetchCheckin: (a) => fetchMiniMaxCheckinStatus(a) });
-      const r = await pushOne({ endpoint, key, source: 'minimax-code', payload, fetchImpl, refreshUrl: await rurl('minimax-code') });
-      results.push({ source: 'minimax-code', status: 'ok', entries: r.entries });
+      const r = await pushOne({ endpoint, key, source: 'minimax-free', payload, fetchImpl, refreshUrl: await rurl('minimax-free') });
+      results.push({ source: 'minimax-free', status: 'ok', entries: r.entries });
       logger.info('10R', '额度卡已推送：minimax-code（{n} 行）', { n: r.entries ?? (Object.keys(payload.quotas || {}).length || 0) });
     } catch (e) {
-      results.push({ source: 'minimax-code', status: 'failed', error: e.message });
+      results.push({ source: 'minimax-free', status: 'failed', error: e.message });
       logger.warn('10R', '额度卡推送失败 minimax-code:{err}', { err: e.message });
     }
   }
