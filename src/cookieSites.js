@@ -176,28 +176,7 @@ export const COOKIE_SITES = [
     no10rSync: true,   // 豆包不推 10R 外部配额卡（无对应提供商线），捕获文案不带「同步 10Router」
     accountName: '豆包网页会话',
     hint: '登录 doubao.com 后自动抓取体验额度与每日签到状态（+200/天，服务端幂等）；仅个人账号可参与（飞书企业号被排除）；凭据只存本机。',
-  },
-  {
-    id: 'inception',
-    name: 'Inception Labs',
-    provider: 'inception',
-    label: 'Inception 免费额度',
-    loginUrl: 'https://platform.inceptionlabs.ai/dashboard/billing',
-    homeUrl: 'https://platform.inceptionlabs.ai',
-    // 探测 = 用量接口（GET /api/usage?quota=1，cookie 鉴权，用户 2026-10-20 抓包）：
-    // 已登录返 200 JSON（limits.totalTokens），未登录 401/重定向到登录页。
-    // ⚠ 必须配代理出口：Cloudflare 对大陆/部分亚太 IP 直接 403（与 Token Harbor 同款约束）。
-    probe: {
-      url: 'https://platform.inceptionlabs.ai/api/usage?quota=1',
-      match: '"totalTokens"',
-      accept: '*/*',
-      preferProxy: true,   // Cloudflare 按 IP 拦（直连 403 风控页），代理优先
-    },
-    verify: 'api',
-    disabled: true,    // issue #35：Cloudflare 对代理出口 /api/* 持续 429、直连 403——网页会话线不可用，待 API key 线评估
-    accountName: 'Inception 网页会话',
-    hint: '【暂不可用，issue #35】Cloudflare 对代理出口 /api/* 持续 429、直连 403，网页会话线无法工作；待评估 API key 线（dashboard 可发 key）。已捕获账号数据保留。',
-  },
+  }
 ];
 
 export const getSite = (id) => COOKIE_SITES.find((s) => s.id === id) || null;
