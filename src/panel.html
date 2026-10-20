@@ -2578,10 +2578,10 @@ function renderFreePool() {
       : T('<span class="badge limited">未捕获</span>');
     const siteDisabled = site.disabled === true;
     const btn = siteDisabled
-      ? T('<button class="btn" disabled title="网页 cookie 无法参与该站活动（活动校验客户端环境）——等待桌面版凭据线">登录捕获（暂不可用）</button>')
+      ? T('<button class="btn" disabled title="网页 cookie 无法参与该站活动（活动校验客户端环境）">网页版（暂不可用）</button>')
       : canCapture
-        ? '<button class="btn primary" data-capture-site="' + esc(site.id) + '">' + I.plus + T('登录捕获') + '</button>'
-        : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">登录捕获</button>');
+        ? '<button class="btn primary" data-capture-site="' + esc(site.id) + '">' + I.plus + T('网页版') + '</button>'
+        : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">网页版</button>');
     // 「粘贴捕获」：部分站点（小米账号 SSO）登录态挂设备指纹，CD 无痕窗也会被静默 SSO
     // 拉回同一账号——多号并存走系统浏览器登录新号后手动粘 cookie（不依赖登录窗）。
     const pasteBtn = ' <button class="btn" data-paste-capture="' + esc(site.id) + '" title="' + T('在其他浏览器登录该站点后，把会话 cookie 粘贴进来捕获（多账号并存的可靠路径）') + '">' + T('粘贴捕获') + '</button>';
@@ -2682,7 +2682,7 @@ function renderFreePool() {
             + (metricHtml ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-left:14px">' + metricHtml + '</div>' : '')
             + '</div>';
         }).join('') + '</div>'
-      : T('<div class="muted-empty" style="padding:16px 0 6px">还没有捕获该站点的账号，点右上角「登录捕获」开始</div>');
+      : T('<div class="muted-empty" style="padding:16px 0 6px">还没有该站点的账号，点右上角「网页版」登录后自动捕获</div>');
 
     // justify-content 不用 space-between：网格行高被最高卡撑齐后，单行账号会被推到卡底（沉底）
     const eyeBtn = '<button class="icon-btn" data-free-hide="' + esc(site.id) + '" title="' + T('隐藏此站点卡片（「全部显示」可恢复）') + '">' + I.eyeOff + '</button>';
@@ -2728,8 +2728,8 @@ function renderCookieSites() {
       ? T('<span class="dim">已捕获 ') + rows.length + T(' 个会话</span>')
       : T('<span class="dim">未捕获</span>');
     const btn = canCapture
-      ? '<button class="btn" data-capture-site="' + esc(site.id) + '">' + T('登录捕获') + '</button>'
-      : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">登录捕获</button>');
+      ? '<button class="btn" data-capture-site="' + esc(site.id) + '">' + T('网页版') + '</button>'
+      : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">网页版</button>');
     const hint = site.hint ? T('<div class="hint">') + esc(site.hint) + '</div>' : '';
     const accRows = rows.map((acc) =>
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px">'

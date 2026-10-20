@@ -65,7 +65,7 @@ export const COOKIE_SITES = [
     id: 'tokenharbor',
     name: 'Token Harbor',
     provider: 'tokenharbor',
-    label: 'Token Harbor 免费额度',
+    label: 'Token Harbor',
     loginUrl: 'https://tokenharbor.ai/login',
     homeUrl: 'https://tokenharbor.ai',
     // 探测标记：由于 Token Harbor 的 dashboard 页面将 Free allowance 移至客户端动态组件中渲染，
@@ -86,14 +86,14 @@ export const COOKIE_SITES = [
     },
     // issue #24：捕获时顺手解析网页读数，存 meta.quotaSnapshot 供额度推送消费
     quota: { fromHtml: parseTokenHarborQuota },
-    accountName: 'Token Harbor 网页会话',
+    accountName: 'Token Harbor',
     hint: '登录后 dashboard 才有 Free allowance 配额；凭据只存本机（账号库加密），同步到 10Router 时按 creditDaddyWebSession 形状传输。',
   },
   {
     id: 'xiaomi-mimo',
     name: 'Xiaomi MiMo',
     provider: 'xiaomi-mimo',
-    label: '小米 MiMo 控制台余额',
+    label: '小米 MiMo',
     loginUrl: 'https://platform.xiaomimimo.com/console/balance',
     homeUrl: 'https://platform.xiaomimimo.com',
     probe: {
@@ -101,21 +101,21 @@ export const COOKIE_SITES = [
       match: 'userId',
       accept: 'application/json, text/plain, */*',
     },
-    accountName: '小米 MiMo 控制台会话',
+    accountName: '小米 MiMo',
     hint: '登录后自动抓取 UID 与控制台充值余额；通过外部配额（issue #24/26）推送到 10Router 配额追踪器显示余额卡片。',
   },
   {
     id: 'modelscope',
     name: 'ModelScope 魔搭',
     provider: 'modelscope',
-    label: 'ModelScope 魔方余额',
+    label: 'ModelScope',
     loginUrl: 'https://modelscope.cn',
     homeUrl: 'https://modelscope.cn',
     // 魔方余额 API 本身就是探测（GET /openapi/v1/magicubes/balance 带会话 cookie）；
     // 每日魔方额度为登录自动发放（前端无 claim 端点），故无签到自动化，只读余额出卡。
     cookieUrls: ['https://modelscope.cn', 'https://www.modelscope.cn'],
     verify: 'api',
-    accountName: 'ModelScope 网页会话',
+    accountName: 'ModelScope',
     identity: { fromHtml: /[\w.+-]+@[\w-]+\.[\w.]+/ },
     hint: '登录魔搭后自动抓取魔方（Magicube）余额；每日额度自动发放无需签到，token 只存本机，余额数字推 10Router 出卡（同名认领可挂连接卡）。',
   },
@@ -123,7 +123,7 @@ export const COOKIE_SITES = [
     id: 'river',
     name: 'River AI',
     provider: 'river',
-    label: 'River AI 免费额度',
+    label: 'River AI',
     loginUrl: 'https://console.river.ai',
     homeUrl: 'https://console.river.ai',
     // 凭据主体是 WorkOS 会话——实测（2026-10-14）SPA 的 token 只在内存 Map，localStorage
@@ -134,14 +134,14 @@ export const COOKIE_SITES = [
     storagePrefixes: ['workos:'],
     cookieUrls: ['https://console.river.ai', 'https://auth.console.river.ai', 'https://login.console.river.ai'],
     verify: 'api',
-    accountName: 'River AI 网页会话',
+    accountName: 'River AI',
     hint: '登录 console.river.ai 后自动抓取 WorkOS 会话与 Billing 余额（$25 免费额度）；token 只存本机，推送 10Router 只带余额数字，会话过期自动刷新（单次轮换即时落盘）。',
   },
   {
     id: 'longcat',
     name: 'LongCat',
     provider: 'longcat',
-    label: 'LongCat Token 资源包',
+    label: 'LongCat',
     loginUrl: 'https://longcat.chat/pc/login',
     homeUrl: 'https://longcat.chat',
     // 资源包汇总 API 即探测：带对 cookie 返 200 {code:0}，未登录 401「用户未登录」（2026-10-15 实测）
@@ -151,14 +151,14 @@ export const COOKIE_SITES = [
       accept: 'application/json, text/plain, */*',
     },
     verify: 'api',
-    accountName: 'LongCat 网页会话',
+    accountName: 'LongCat',
     hint: '登录 longcat.chat 后自动抓取 Token 资源包余量与逐包明细（当前包 + 其他包，按官方消耗顺序排列）；推送 10Router 只带 token 数字，会话 cookie 只存本机。',
   },
   {
     id: 'doubao',
     name: '豆包',
     provider: 'doubao',
-    label: '豆包体验额度',
+    label: '豆包',
     loginUrl: 'https://www.doubao.com',
     homeUrl: 'https://www.doubao.com',
     // 探测 = 任务面板数据接口本身（issue #32，2026-10-19/20 实测）：POST detail 带会话 cookie

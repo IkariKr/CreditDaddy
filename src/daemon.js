@@ -1841,6 +1841,16 @@ export async function startDaemon(port = DEFAULT_PORT, host = '127.0.0.1') {
       logger.info('DAEMON', '已移除 {count} 个 MiniMax 国际版账号(该渠道已下线,额度接口对国内网络不可用)', { count: dead.length });
     }
   }
+  // 一次性清理（issue #35）：Inception Labs 线已整体删除（Cloudflare 对代理出口 /api/*
+  // 持续 429），存量账号留着只会被签到/额度轮询反复打上游（401/429 报错刷屏）。命中才落盘。
+  {
+    const list = await loadAccounts();
+    const dead = list.filter((a) => a.provider === 'inception');
+    if (dead.length) {
+      await withAccounts((l) => { l.splice(0, l.length, ...l.filter((a) => a.provider !== 'inception')); });
+      logger.info('DAEMON', '已移除 {count} 个 Inception Labs 会话(该渠道已删除,网页会话线不可用)', { count: dead.length });
+    }
+  }
   let panelHtml = '';
   fs.readFile(PANEL_FILE, 'utf8').then((h) => { panelHtml = h; }).catch(() => {});
 
