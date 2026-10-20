@@ -143,11 +143,13 @@ export async function buildMiniMaxPayload(accounts, fetchQuota, { resetAt, fetch
     }
     rows[rowKey(i)] = row;
   }
-  const payload = { provider: 'minimax-free', label: t('MiniMax Code 免费额度') };
+  // label 是数据标识不是 UI 文案——不随 CD 面板语言翻译（面板设英文时曾把
+  // label 推成英文，10R 卡面副标题跟着变英文）。显示侧翻译由 10R 负责。
+  const payload = { provider: 'minimax-free', label: 'MiniMax Code 免费额度' };
   if (Object.keys(rows).length) {
     payload.quotas = rows;
     payload.plan = 'Free';
-    if (failed) payload.label = t('MiniMax Code 免费额度（{n} 个账号查询失败）', { n: failed }).slice(0, 100);
+    if (failed) payload.label = `MiniMax Code 免费额度（${failed} 个账号查询失败）`.slice(0, 100);
   } else {
     payload.message = t('MiniMax 账号额度暂不可查（凭据失效需在 CreditDaddy 重新登录，或官方接口异常稍后自动重试）');
   }
