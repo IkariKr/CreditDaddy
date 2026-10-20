@@ -184,3 +184,11 @@ test('doubao 进 providers 注册表：checkin / quota 可分发', async () => {
   assert.equal(typeof impl.checkin, 'function');
   assert.equal(typeof impl.quota, 'function');
 });
+
+test('cookieSites 配置表的 provider 全部在 PROVIDERS 白名单（豆包收割上报被 store 校验拒的回归钉子）', async () => {
+  const { COOKIE_SITES } = await import('../src/cookieSites.js');
+  const { PROVIDERS } = await import('../src/constants.js');
+  for (const site of COOKIE_SITES) {
+    assert.ok(PROVIDERS.includes(site.provider), `站点 ${site.id} 的 provider "${site.provider}" 不在 PROVIDERS 白名单——收割上报会被 store 拒绝`);
+  }
+});
