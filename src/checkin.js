@@ -332,16 +332,18 @@ async function runTickInner(opts) {
   const limited = results.filter((r) => r.status === 'limited');
   const already = results.length - claimed.length - failed.length - none.length - limited.length;
   const totalCredits = claimed.reduce((sum, r) => sum + (r.claimedAmount || 0), 0);
+  const summaryKey = limited.length
+    ? '签到汇总：成功 {ok}（+{credits} Credits）、已领 {al}、本机限领 {limited}、无活动 {none}、失败 {fail}'
+    : '签到汇总：成功 {ok}（+{credits} Credits）、已领 {al}、无活动 {none}、失败 {fail}';
+  const summaryArgs = { ok: claimed.length, credits: totalCredits, al: already, limited: limited.length, none: none.length, fail: failed.length };
+  // 摘要走 i18n 模板（key+args，面板按界面语言 T() 渲染，与日志同源同语）；
+  // summary 保留简中拼接兜底旧面板/CLI 直读（不再被面板展示路径使用）
   const summary = `签到汇总：成功 ${claimed.length}（+${totalCredits} Credits）、已领 ${already}`
     + (limited.length ? `、本机限领 ${limited.length}` : '')
     + `、无活动 ${none.length}、失败 ${failed.length}`;
-  // 日志走 key+args（按界面语言实时重渲染）；summary 原文继续供面板/状态展示
-  logger.info('CHECKIN', limited.length
-    ? '签到汇总：成功 {ok}（+{credits} Credits）、已领 {al}、本机限领 {limited}、无活动 {none}、失败 {fail}'
-    : '签到汇总：成功 {ok}（+{credits} Credits）、已领 {al}、无活动 {none}、失败 {fail}',
-    { ok: claimed.length, credits: totalCredits, al: already, limited: limited.length, none: none.length, fail: failed.length });
-  lastTick = { at: new Date().toISOString(), summary };
-  return { results, summary };
+  logger.info('CHECKIN', summaryKey, summaryArgs);
+  lastTick = { at: new Date().toISOString(), summary, summaryKey, summaryArgs };
+  return { results, summary, summaryKey, summaryArgs };
 }
 
 async function scheduleTick() {

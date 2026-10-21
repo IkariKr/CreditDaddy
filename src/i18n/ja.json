@@ -1698,5 +1698,11 @@
   "旧版聚合卡 minimax-free 已清理（推送改为按账号单卡）": "旧集約カード minimax-free をクリーンアップしました（送信はアカウント別カードに移行）",
   "读取本机妙手（美团 CatPaw）客户端当前登录的账号（本地解密 %APPDATA%\\catpaw-moon\\catx-credential.json），token 不出本机。": "ローカルの妙手（美団 CatPaw）クライアントの現在ログイン中アカウントを読み取ります（%APPDATA%\\catpaw-moon\\catx-credential.json をローカルで復号）。トークンは本機から出ません。",
   "读取本机 Trae 客户端当前登录的账号（本地解密 <客户端数据目录>\\User\\globalStorage\\storage.json 的 tc 信封），token 不出本机。": "ローカルの Trae クライアントの現在ログイン中アカウントを読み取ります（<クライアントデータdir>\\User\\globalStorage\\storage.json の tc エンベロープをローカルで復号）。トークンは本機から出ません。",
-  "检测到 Trae 国际版客户端（trae.ai）——CreditDaddy 的 Trae 线仅支持国内版（api.trae.cn），导入后额度与签到不可用": "Trae 国際版クライアント（trae.ai）を検出しました。CreditDaddy の Trae 機能は中国国内版（api.trae.cn）のみ対応のため、インポート後も残高とチェックインは利用できません。"
+  "检测到 Trae 国际版客户端（trae.ai）——CreditDaddy 的 Trae 线仅支持国内版（api.trae.cn），导入后额度与签到不可用": "Trae 国際版クライアント（trae.ai）を検出しました。CreditDaddy の Trae 機能は中国国内版（api.trae.cn）のみ対応のため、インポート後も残高とチェックインは利用できません。",
+  "✨ 新功能": "✨ 新機能",
+  "🐛 修复": "🐛 修正",
+  "🔧 移除": "🔧 削除",
+  "修复": "修正",
+  "新功能": "新機能",
+  "移除": "削除"
 }

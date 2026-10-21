@@ -1698,5 +1698,11 @@
   "旧版聚合卡 minimax-free 已清理（推送改为按账号单卡）": "Legacy aggregate card minimax-free cleaned up (push now uses per-account cards)",
   "读取本机妙手（美团 CatPaw）客户端当前登录的账号（本地解密 %APPDATA%\\catpaw-moon\\catx-credential.json），token 不出本机。": "Reads the currently signed-in account of the local CatPaw (Meituan) client (decrypts %APPDATA%\\catpaw-moon\\catx-credential.json locally); the token never leaves this machine.",
   "读取本机 Trae 客户端当前登录的账号（本地解密 <客户端数据目录>\\User\\globalStorage\\storage.json 的 tc 信封），token 不出本机。": "Reads the currently signed-in account of the local Trae client (decrypts the tc envelope in <client data dir>\\User\\globalStorage\\storage.json locally); the token never leaves this machine.",
-  "检测到 Trae 国际版客户端（trae.ai）——CreditDaddy 的 Trae 线仅支持国内版（api.trae.cn），导入后额度与签到不可用": "Detected Trae international client (trae.ai) — CreditDaddy's Trae line supports the CN edition (api.trae.cn) only; quota and check-in will not work after import."
+  "检测到 Trae 国际版客户端（trae.ai）——CreditDaddy 的 Trae 线仅支持国内版（api.trae.cn），导入后额度与签到不可用": "Detected Trae international client (trae.ai) — CreditDaddy's Trae line supports the CN edition (api.trae.cn) only; quota and check-in will not work after import.",
+  "✨ 新功能": "✨ New",
+  "🐛 修复": "🐛 Fixed",
+  "🔧 移除": "🔧 Removed",
+  "修复": "Fixed",
+  "新功能": "New",
+  "移除": "Removed"
 }

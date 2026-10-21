@@ -154,6 +154,9 @@ export function normalizeMirasimLimits(limits, profile = null) {
     plan: profile?.plan ? String(profile.plan).toUpperCase() : (limits?.paid ? 'PRO' : 'FREE'),
     planExpiresAt: epochToIso(profile?.plan_exp),
     bottleneckLabel: isExhausted ? (bottleneck?.name || '额度') + '已用尽' : null,
+    // 结构化瓶颈（面板按词典分别 T() 窗口名与「已用尽」，替代拼串 bottleneckLabel——
+    // 上游新增窗口名（如 '30d'）无词典映射时拼串会出「30d已用尽」混语）
+    bottleneck: isExhausted && bottleneck ? { name: bottleneck.name } : null,
     parts,
     empty: parts.length === 0,
     exceeded: limits?.suspended === true || isExhausted,

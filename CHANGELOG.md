@@ -15,6 +15,7 @@
 > **同版重发说明（2026-10-21）**：1.6.0 首发构建（tag 未打，无线上产物）后当日连修六笔（详见 docs/incident-20261021-quota-sync.md），全部并入本版随 tag 一次发出；此前分发的本地测试包（81b02e0 / 5b5aab6 / b6f6dad 等 build）与本 tag 构建并存，以本 tag 产物为准。
 
 本版主题:**Trae 9074 换设备号重试（#31）+ WorkBuddy 国际版「活跃领取」机制下线 + 豆包每日签到第 8 产品线（#32）+ MiniMax 免费额度卡回归 10Router 并带只读签到状态（#33 方案 B）+ 2026-10-21 六连修复**。
+Theme: Trae 9074 device-id rotation retry (#31) + WorkBuddy intl "active-claim" retirement + Doubao daily check-in as the 8th product line (#32) + MiniMax free-quota card back on 10Router with read-only check-in status (#33 plan B) + the 2026-10-21 six-fix batch.
 
 ### 🔧 修复（2026-10-21 六连，详见 docs/incident-20261021-quota-sync.md）
 
