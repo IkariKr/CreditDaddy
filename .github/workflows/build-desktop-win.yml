@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           mkdir -p desktop/server
           cp -r bin src package.json README.md CHANGELOG.md desktop/server/
-          [ -f CHANGELOG.en.md ] && cp CHANGELOG.en.md desktop/server/ || true
+          for f in CHANGELOG.en.md CHANGELOG.ja.md CHANGELOG.ko.md; do [ -f $f ] && cp $f desktop/server/; done; true
           # #21 构建身份:打进 app,随 /api/status.build 与「同版本新构建」判定使用
           node scripts/gen-build-info.js desktop/server/build.json
 
@@ -144,7 +144,7 @@ jobs:
           set -euo pipefail
           mkdir -p desktop/server
           cp -r bin src package.json README.md CHANGELOG.md desktop/server/
-          [ -f CHANGELOG.en.md ] && cp CHANGELOG.en.md desktop/server/ || true
+          for f in CHANGELOG.en.md CHANGELOG.ja.md CHANGELOG.ko.md; do [ -f $f ] && cp $f desktop/server/; done; true
           # #21 构建身份:打进 app,随 /api/status.build 与「同版本新构建」判定使用
           node scripts/gen-build-info.js desktop/server/build.json
           ls desktop/server/

@@ -1332,9 +1332,10 @@ function registerAuthWindowIpc() {
     //   在线：优先 raw.githubusercontent 按 tag 拉 CHANGELOG.<lang>.md（v1.6.0 起提供 en；逐版翻译，
     //   老版本在 en 文件里给一行指引回落主文件），404/超时回落 Releases API body（简中主文）。
     //   回落：随包 CHANGELOG[.<lang>].md（CI 暂存时一并拷入）。
-    // 非 zh 系 locale 才走 en 文件；zh / zh-TW / 缺省走主文件（简中/繁中由主文承载，繁中词典覆盖 UI 不覆盖日志正文）。
+    // 非 zh 系 locale 走对应语言文件（en/ja/ko，v1.6.0 起提供）；zh / zh-TW / 缺省走主文件
+    // （简中/繁中由主文承载，繁中词典覆盖 UI 不覆盖日志正文）。
     const briefLocale = (() => { try { return I18N ? I18N.getLocale() : ''; } catch { return ''; } })();
-    const briefLang = /^en/i.test(briefLocale) ? 'en' : '';
+    const briefLang = /^en/i.test(briefLocale) ? 'en' : /^ja/i.test(briefLocale) ? 'ja' : /^ko/i.test(briefLocale) ? 'ko' : '';
     const langFile = (base) => (briefLang ? path.join(serverRoot, 'CHANGELOG.' + briefLang + '.md') : path.join(serverRoot, base));
     try {
       const m = /^https?:\/\/github\.com\/([^/]+)\/([^/#?]+)/.exec(daemonInfo.homepage || DEFAULT_HOMEPAGE);
