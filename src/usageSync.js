@@ -451,7 +451,7 @@ function collectMimo(files, now = Date.now()) {
 function collectMirasim(files, endpoint, now = Date.now()) {
   const out = [];
   const seen = new Set();
-  let selfHosted = 0, unsettled = 0;
+  let selfHosted = 0, relayed = 0, unsettled = 0;
   for (const f of files) {
     for (const line of fs.readFileSync(f, 'utf8').split('\n')) {
       if (!line.trim()) continue;
@@ -460,6 +460,14 @@ function collectMirasim(files, endpoint, now = Date.now()) {
       if (!e || typeof e !== 'object') continue;
       if (e.id) { if (seen.has(e.id)) continue; seen.add(e.id); }
       if (isSelfHostedUpstream(e.upstreamHost, endpoint)) { selfHosted++; continue; }
+      // 只同步走 mirasim 官方中继（relay.mirasim.ai）的调用（2026-10-21 用户拍板）：
+      // mirasim IDE 里直连上游的调用，上游就是本机 10Router——10R 已原生记账（落在
+      // codebuddy-cn 等连接名下），CD 再导一遍就是同一批调用记两笔（10R 用量表里
+      // glm-5.3-flashx 出现 codebuddy-cn 3,800 + mirasim-anthropic 2,917 两行重复）。
+      // viaRelay=true 的行走 mirasim 官方云中继，10R 没见过，才是 CD 该补的账。
+      // direct 行 upstreamHost 全为 null 无从判上游，viaRelay 就是现成的分界（实测
+      // relay 行全部是 claude/kimi 家族、direct 行全部是 glm/deepseek/gemini，零交叉）。
+      if (!e.viaRelay) { relayed++; continue; }
       if (!((e.input || 0) + (e.output || 0) + (e.cacheRead || 0) + (e.cacheWrite || 0))) continue;
       // 刚发生的调用可能还在补字段（durationMs / token 等），定型前先不发
       const tsMs = Date.parse(e.ts);
@@ -467,7 +475,7 @@ function collectMirasim(files, endpoint, now = Date.now()) {
       out.push(convertMirasimRow(e));
     }
   }
-  return { entries: out, notes: (selfHosted ? [`跳过 ${selfHosted} 行经 10Router 中转的调用（已在 10Router 记账）`] : []).concat(unsettled ? [`暂不同步 ${unsettled} 行 1 小时内的新调用（等记录定型）`] : []) };
+  return { entries: out, notes: (selfHosted ? [`跳过 ${selfHosted} 行经 10Router 中转的调用（已在 10Router 记账）`] : []).concat(relayed ? [`跳过 ${relayed} 行直连上游的调用（上游为本机 10Router，已在 10Router 记账）`] : []).concat(unsettled ? [`暂不同步 ${unsettled} 行 1 小时内的新调用（等记录定型）`] : []) };
 }
 
 /** 读取某来源的全部行：{ entries, notes, files, sentTotals? }；来源不存在返回 entries=[] */

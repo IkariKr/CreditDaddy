@@ -58,6 +58,24 @@ test('用量转换：与 10router-sync 插件同一口径', () => {
   assert.ok(us.isSelfHostedUpstream('127.0.0.1:20128', null));
   assert.ok(us.isSelfHostedUpstream('192.168.1.5:9000', 'http://192.168.1.5:20128'));
   assert.ok(!us.isSelfHostedUpstream('api.anthropic.com', 'http://127.0.0.1:20128'));
+
+  // mirasim 只同步官方中继行（viaRelay=true）——直连上游的行走的是本机 10Router，
+  // 10R 已原生记账，再导就是同一批调用记两笔（2026-10-21 用户拍板）
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mir-'));
+  const file = path.join(dir, 'usage-2026-10.ndjson');
+  const rows = [
+    { id: 'r1', ts: '2026-10-20T00:00:00.000Z', provider: 'anthropic', model: 'claude-opus-5-5', viaRelay: true, upstreamHost: 'relay.mirasim.ai', input: 10, output: 2, status: 200 },
+    { id: 'd1', ts: '2026-10-20T00:00:01.000Z', provider: 'anthropic', model: 'glm-5.3-flashx', viaRelay: false, upstreamHost: null, input: 99, output: 2, status: 200 },
+    { id: 'r2', ts: String(Date.now() - 30 * 1000), provider: 'anthropic', model: 'claude-haiku-5-5', viaRelay: true, upstreamHost: 'relay.mirasim.ai', input: 5, output: 1, status: 200 },
+  ];
+  fs.writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n'));
+  const cm = us.collectMirasim ? us.collectMirasim([file], 'http://192.168.31.101:20127') : null;
+  if (cm) {
+    assert.equal(cm.entries.length, 1);   // 只剩官方中继行（r2 未定型不算）
+    assert.equal(cm.entries[0].model, 'claude-opus-5-5');
+    assert.ok(cm.notes.some((n) => n.includes('直连上游')));
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('增量筛选：水位线往前重叠 2 天，返回新的最大时间戳', () => {
@@ -105,12 +123,12 @@ test('额度总览：带 key 请求、401 → key 无效、404 → 10Router 版�
   } finally { m.restore(); }
 });
 
-test('用量同步：首轮全量、第二轮只发增量，跳过经 10Router 中转的调用', async () => {
+test('用量同步：首轮全量、第二轮只发增量，只同步官方中继行（viaRelay），直连 10R 的跳过', async () => {
   writeMirasim([
-    { id: 'a', ts: '2026-09-01T00:00:00.000Z', provider: 'anthropic', input: 1, output: 1, status: 200 },
-    { id: 'b', ts: '2026-09-20T00:00:00.000Z', provider: 'openai-chat', input: 2, output: 2, status: 200 },
-    { id: 'c', ts: '2026-09-20T01:00:00.000Z', provider: 'anthropic', input: 3, output: 3, status: 200, upstreamHost: '127.0.0.1:20128' },
-    { id: 'd', ts: '2026-09-20T02:00:00.000Z', provider: 'anthropic', input: 0, output: 0, status: 500 },
+    { id: 'a', ts: '2026-09-01T00:00:00.000Z', provider: 'anthropic', input: 1, output: 1, status: 200, viaRelay: true, upstreamHost: 'relay.mirasim.ai' },
+    { id: 'b', ts: '2026-09-20T00:00:00.000Z', provider: 'openai-chat', input: 2, output: 2, status: 200, viaRelay: true, upstreamHost: 'relay.mirasim.ai' },
+    { id: 'c', ts: '2026-09-20T01:00:00.000Z', provider: 'anthropic', input: 3, output: 3, status: 200, viaRelay: false, upstreamHost: null },   // 直连 10R：跳过
+    { id: 'd', ts: '2026-09-20T02:00:00.000Z', provider: 'anthropic', input: 0, output: 0, status: 500, viaRelay: true, upstreamHost: 'relay.mirasim.ai' },
   ]);
   const posted = [];
   const m = mockFetch((url, init) => {
@@ -122,13 +140,13 @@ test('用量同步：首轮全量、第二轮只发增量，跳过经 10Router �
     const r1 = await tr.runUsageSync();
     assert.match(m.calls[0].url, /\/api\/settings\/database\/import-usage$/);
     assert.equal(m.calls[0].init.headers.Authorization, 'Bearer sk-abcdefghijklmnop');
-    assert.deepEqual(posted[0].map((e) => e.meta.mirasimCallId), ['a', 'b']);   // c 经 10Router 中转，d 无 token
+    assert.deepEqual(posted[0].map((e) => e.meta.mirasimCallId), ['a', 'b']);   // c 直连 10R 跳过，d 无 token
     assert.match(r1.summary, /新增 2 行，跳过 2 行重复/);   // 服务端去重结果直接显示出来
 
     writeMirasim([
-      { id: 'a', ts: '2026-09-01T00:00:00.000Z', provider: 'anthropic', input: 1, output: 1, status: 200 },
-      { id: 'b', ts: '2026-09-20T00:00:00.000Z', provider: 'openai-chat', input: 2, output: 2, status: 200 },
-      { id: 'e', ts: '2026-09-21T00:00:00.000Z', provider: 'anthropic', input: 5, output: 5, status: 200 },
+      { id: 'a', ts: '2026-09-01T00:00:00.000Z', provider: 'anthropic', input: 1, output: 1, status: 200, viaRelay: true, upstreamHost: 'relay.mirasim.ai' },
+      { id: 'b', ts: '2026-09-20T00:00:00.000Z', provider: 'openai-chat', input: 2, output: 2, status: 200, viaRelay: true, upstreamHost: 'relay.mirasim.ai' },
+      { id: 'e', ts: '2026-09-21T00:00:00.000Z', provider: 'anthropic', input: 5, output: 5, status: 200, viaRelay: true, upstreamHost: 'relay.mirasim.ai' },
     ]);
     await tr.runUsageSync();
     assert.deepEqual(posted[1].map((e) => e.meta.mirasimCallId), ['b', 'e']);   // a 在水位线 - 2 天之前，不再重发
