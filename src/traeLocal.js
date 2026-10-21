@@ -16,8 +16,12 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { dataDir } from './store.js';
 
-const APP_NAMES = ['TRAE SOLO CN', 'Trae CN', 'TRAE SOLO', 'Trae'];
-const EXE_NAMES = ['TRAE SOLO CN.exe', 'Trae CN.exe', 'TRAE SOLO.exe', 'Trae.exe'];
+// 探测顺序（2026-10-21 TraeWork→TRAE 迁移后定版）：新 TRAE CN 优先、国际版次之，
+// SOLO 两个旧变体垫底——SOLO CN 客户端已停发（官方数据迁移页引导全员升新 TRAE），
+// 但迁移期仍有未升级用户，保留兜底；已卸载残留的旧目录读到陈旧凭据的危害大于漏检，
+// 故不再排最前。TRAE_HOME 环境变量可显式指定目录（traeDataDir）。
+const APP_NAMES = ['Trae CN', 'Trae', 'TRAE SOLO CN', 'TRAE SOLO'];
+const EXE_NAMES = ['Trae CN.exe', 'Trae.exe', 'TRAE SOLO CN.exe', 'TRAE SOLO.exe'];
 const AUTH_KEY = 'iCubeAuthInfo://icube.cloudide';
 const DC_PREFIX = 'iCubeAuthInfo://icube-dc:';
 const HEADER = Buffer.from([116, 99, 5, 16, 0, 0]);
@@ -98,7 +102,12 @@ export function readLiveAuth() {
   if (!storage) return null;
   const auth = tcDecrypt(storage[AUTH_KEY]);
   if (!auth || typeof auth.token !== 'string') return null;
-  return { dataDir: dir, deviceId: deviceIdOf(storage), auth };
+  // 国际版防御：信封里带登录 host（api.trae.cn = 国内 / *.trae.ai = 国际，实测 TraeWork→TRAE
+  // 迁移后的国际版目录 host 为 growsg-normal.trae.ai）。CD 的 Trae 线（额度/签到/网关）全部
+  // 打 api.trae.cn，国际版 JWT 不被认——标记 isIntl 让上层明确提示，而不是导入后对着空额度卡困惑。
+  const host = String(auth.host || '');
+  const isIntl = Boolean(host) && !/(^|\.)trae\.cn$/.test(new URL(host).hostname || '');
+  return { dataDir: dir, deviceId: deviceIdOf(storage), auth, isIntl, host: host || null };
 }
 
 const decodeTasklist = (buf) => {
@@ -157,7 +166,7 @@ export function detectTrae() {
 export async function liveToAccount() {
   const live = readLiveAuth();
   if (!live) return null;
-  const { auth, deviceId } = live;
+  const { auth, deviceId, isIntl } = live;
   const account = {
     provider: 'trae',
     token: auth.token,
@@ -174,6 +183,7 @@ export async function liveToAccount() {
       deviceId: deviceId || undefined,
       host: auth.host || undefined,
       region: auth.userRegion?.region || undefined,
+      isIntl: isIntl || undefined,
       avatarUrl: auth.account?.avatar_url || undefined,
       capturedAt: new Date().toISOString(),
     },

@@ -1479,8 +1479,10 @@ async function handleApi(req, res, url) {
     // 6) Trae 客户端：解密 <userData>\User\globalStorage\storage.json 的 tc 信封当前登录
     try {
       const tr = await traeLiveAccount();
-      if (tr) addRecord(tr, { source: 'Trae 当前登录', current: true });
-    } catch (e) { errors.push({ file: 'TRAE SOLO CN/User/globalStorage/storage.json', error: e.message }); }
+      // 国际版客户端（信封 host 为 *.trae.ai）：CD 的 Trae 线只打 api.trae.cn，导入只会有
+      // 一张空额度卡——照常列出让用户可见，但带 intlWarning 由前端明确提示，不静默。
+      if (tr) addRecord(tr, { source: 'Trae 当前登录', current: true, ...(tr.meta?.isIntl ? { intlWarning: '检测到 Trae 国际版客户端（trae.ai）——CreditDaddy 的 Trae 线仅支持国内版（api.trae.cn），导入后额度与签到不可用' } : {}) });
+    } catch (e) { errors.push({ file: 'TRAE/User/globalStorage/storage.json', error: e.message }); }
     // 7) MiniMax 客户端：读取 ~/.minimax 凭据当前登录
     try {
       const mm = await minimaxLiveAccount();

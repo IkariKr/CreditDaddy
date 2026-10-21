@@ -3936,10 +3936,11 @@ async function localScan() {
       const sub = c.kind === 'app'
         ? esc(c.source) + (c.email ? ' · ' + esc(mask(c.email)) : c.phone ? ' · ' + esc(c.phone) : '') + (c.expiresAt ? T(' · 有效期至 ') + esc(fmtTime(c.expiresAt)) : '')
         : esc(c.source) + ' · ' + esc(String(c.file || '').split(/[\\/]/).pop()) + T('（') + c.hits + T(' 处）');
+      const intl = c.intlWarning ? '<div class="hint" style="color:var(--warn,#d4b83a);margin-top:4px">⚠ ' + esc(c.intlWarning) + '</div>' : '';
       const btns = c.imported ? T('<span class="pill ok">已导入</span>') + (c.provider ? '<button class="btn" data-cid="' + esc(c.id) + T('" title="用本机凭据更新 token / 有效期 / 邮箱">同步信息</button>') : '')
         : c.provider ? '<button class="btn primary" data-cid="' + esc(c.id) + T('">导入</button>')
         : '<button class="btn" data-cid="' + esc(c.id) + T('" data-prov="qoder">导入·国际</button><button class="btn" data-cid="') + esc(c.id) + T('" data-prov="qoder-cn">导入·国内</button>');
-      html += '<div class="cand"><div class="cand-main"><div class="cand-name">' + title + prov + '</div><div class="cand-sub">' + sub + '</div></div><div class="row">' + btns + '</div></div>';
+      html += '<div class="cand"><div class="cand-main"><div class="cand-name">' + title + prov + '</div><div class="cand-sub">' + sub + '</div>' + intl + '</div><div class="row">' + btns + '</div></div>';
     }
     for (const e of r.errors || []) {
       html += T('<div class="hint" style="color:var(--err)">读取失败：') + esc(e.file) + T('：') + esc(e.error) + '</div>';

@@ -1697,5 +1697,6 @@
   "把 CreditDaddy 解析的额度数字（不含凭据）推到 10Router 配额页出卡；卡片在 10Router 具 7 天有效期。点「立即同步一次」或 10Router 页「刷新额度」也会立即推送。": "Push the quota numbers CreditDaddy parsed (no credentials) to the 10Router quota page as cards; cards expire after 7 days on 10Router. \"Sync once now\" or \"Refresh quota\" on the 10Router page also pushes immediately.",
   "旧版聚合卡 minimax-free 已清理（推送改为按账号单卡）": "Legacy aggregate card minimax-free cleaned up (push now uses per-account cards)",
   "读取本机妙手（美团 CatPaw）客户端当前登录的账号（本地解密 %APPDATA%\\catpaw-moon\\catx-credential.json），token 不出本机。": "Reads the currently signed-in account of the local CatPaw (Meituan) client (decrypts %APPDATA%\\catpaw-moon\\catx-credential.json locally); the token never leaves this machine.",
-  "读取本机 Trae 客户端当前登录的账号（本地解密 <客户端数据目录>\\User\\globalStorage\\storage.json 的 tc 信封），token 不出本机。": "Reads the currently signed-in account of the local Trae client (decrypts the tc envelope in <client data dir>\\User\\globalStorage\\storage.json locally); the token never leaves this machine."
+  "读取本机 Trae 客户端当前登录的账号（本地解密 <客户端数据目录>\\User\\globalStorage\\storage.json 的 tc 信封），token 不出本机。": "Reads the currently signed-in account of the local Trae client (decrypts the tc envelope in <client data dir>\\User\\globalStorage\\storage.json locally); the token never leaves this machine.",
+  "检测到 Trae 国际版客户端（trae.ai）——CreditDaddy 的 Trae 线仅支持国内版（api.trae.cn），导入后额度与签到不可用": "Detected Trae international client (trae.ai) — CreditDaddy's Trae line supports the CN edition (api.trae.cn) only; quota and check-in will not work after import."
 }
