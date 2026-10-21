@@ -2896,6 +2896,11 @@ if (window.creditdaddy && typeof window.creditdaddy.onCookieCaptured === 'functi
         if (state.view === 'free') renderFreePool();
         renderCookieSites();
         renderDash();
+        // 收割时余额快照已随账号落库——账号卡上的余额读 state.quotas 缓存，
+        // 不重拉就显示旧数字（实测：小米收割成功后卡面 ¥0.00 挂到手动刷新）。
+        // 非 live 读快照零网络，成本可忽略；只刷 cookie-site 型账号。
+        const ids = (state.accounts || []).filter((a) => a.meta?.cookieSiteId).map((a) => a.id);
+        if (ids.length) loadQuotas(ids).then(renderDash);
       });
   });
 }
