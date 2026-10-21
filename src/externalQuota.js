@@ -307,6 +307,14 @@ export async function runQuotaPush({ endpoint, key, accounts, fetchImpl, onlySou
   // 0. minimax-free（单账号单卡，minimax-code 同款单值卡：带签到徽章）
   const mmAccounts = (accounts || []).filter((a) => a.provider === 'minimax' && (a.token || a.refreshToken));
   if (mmAccounts.length) {
+    // 一次性清理：按账号单卡（6ebcc52）之前的版本把全部账号聚在 source「minimax-free」
+    // 一张多行卡上；升级用户的那张旧卡没人再推（也不该再推），不删会挂到 7 天 TTL 自然过期，
+    // 期间与新的 per-account 卡并存（主/备 + 老聚合卡三张，2026-10-21 实测）。有账号可推时
+    // 删一次旧 source，失败不阻断本轮推送（下轮还会再试）。
+    if (!only) {
+      const deleted = await deleteExternalQuota({ endpoint, key, source: 'minimax-free', fetchImpl });
+      if (deleted) logger.info('10R', '旧版聚合卡 minimax-free 已清理（推送改为按账号单卡）');
+    }
     const { fetchMiniMaxQuota, fetchMiniMaxCheckinStatus } = await import('./minimaxClient.js');
     for (const a of mmAccounts) {
       const { source } = buildMiniMaxAccountPayload(a, null);
