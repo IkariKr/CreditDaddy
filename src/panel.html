@@ -831,9 +831,9 @@
 <!-- 免费额度池：推送设置 -->
 <div class="mask" id="m-free-settings">
   <div class="modal sm">
-    <div class="modal-title"><span data-i18n="免费额度推送设置">免费额度推送设置</span><button class="close" data-close>✕</button></div>
+    <div class="modal-title"><span data-i18n="额度卡片推送设置">额度卡片推送设置</span><button class="close" data-close>✕</button></div>
     <div class="field">
-      <label class="check"><input type="checkbox" id="free-push-auto"> <span data-i18n="自动推送免费额度卡到 10Router（Token Harbor / MiniMax）">自动推送免费额度卡到 10Router（Token Harbor / MiniMax）</span></label>
+      <label class="check"><input type="checkbox" id="free-push-auto"> <span data-i18n="自动推送额度卡片到 10Router（Token Harbor / MiniMax / LongCat 等）">自动推送额度卡片到 10Router（Token Harbor / MiniMax / LongCat 等）</span></label>
     </div>
     <div class="field">
       <label data-i18n="推送频率">推送频率</label>
@@ -845,7 +845,7 @@
         <option value="240" data-i18n="每 4 小时">每 4 小时</option>
       </select>
     </div>
-    <div class="hint" data-i18n="把 CreditDaddy 解析的免费额度数字（不含凭据）推到 10Router 配额页出卡；卡片在 10Router 具 7 天有效期。点「立即同步一次」或 10Router 页「刷新额度」也会立即推送。">把 CreditDaddy 解析的免费额度数字（不含凭据）推到 10Router 配额页出卡；卡片在 10Router 具 7 天有效期。点「立即同步一次」或 10Router 页「刷新额度」也会立即推送。</div>
+    <div class="hint" data-i18n="把 CreditDaddy 解析的额度数字（不含凭据）推到 10Router 配额页出卡；卡片在 10Router 具 7 天有效期。点「立即同步一次」或 10Router 页「刷新额度」也会立即推送。">把 CreditDaddy 解析的额度数字（不含凭据）推到 10Router 配额页出卡；卡片在 10Router 具 7 天有效期。点「立即同步一次」或 10Router 页「刷新额度」也会立即推送。</div>
     <div class="hint" id="free-settings-status" style="margin-top:8px"></div>
     <div class="modal-actions">
       <button class="btn" style="margin-right:auto" id="free-settings-push-now" data-i18n="立即推送一次">立即推送一次</button>
@@ -2822,7 +2822,7 @@ $('free-settings-save')?.addEventListener('click', async () => {
       },
     });
     closeModal('m-free-settings');
-    toast(T('免费额度推送设置已保存'));
+    toast(T('额度卡片推送设置已保存'));
   } catch (e) { toast(e.message, false); }
 });
 $('free-settings-push-now')?.addEventListener('click', async () => {
