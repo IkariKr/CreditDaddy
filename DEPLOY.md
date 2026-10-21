@@ -14,6 +14,8 @@
 
 **tag / Release 删除与创建 / npm publish，一律以维护者的明确指令为准**——任何工具链、脚本或 AI 协作者不得自行决定发版或撤回。修复与准备停在 main（版本号允许先行），用户确认后才执行 tag 与发布动作。
 
+**npm publish 单独授权（更硬的一条）**：`npm publish` **必须由维护者单独、显式地下命令才执行**——不得捆绑在 tag、push、Release 操作里顺手做，不得从「打包」「发版」「重新打包」等措辞里推断出 publish 授权。没有单独那句「发 npm」，就永远停在「不发布」。registry 同版本不可重发，误发的撤销成本远高于少发一步。
+
 ### 标准步骤
 
 1. **bump 版本号**（三处必须一致，CI 会校验）：
@@ -37,7 +39,7 @@
 
    触发 `build-fpk`（4 个 fpk 变体）和 `build-desktop-win`（Win/macOS 桌面版），
    自动建 GitHub Release 并上传产物 + SHA256。
-5. **（可选）发 npm**：`npm publish`（包名 `creditdaddy`，CLI 直装）。
+5. **（可选）发 npm**：`npm publish`（包名 `creditdaddy`，CLI 直装）。**须维护者单独显式下令**，见上方授权规则——任何其他措辞（打包 / 发版 / 重新打包 / 推 tag）都不构成 publish 授权。
 
 ## 构建方式
 
