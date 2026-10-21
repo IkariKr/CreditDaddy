@@ -1328,10 +1328,59 @@ function registerAuthWindowIpc() {
       }
       return sec;
     };
+    // 多语目录（2026-10-21）：按面板语言拉对应语言文件——
+    //   在线：优先 raw.githubusercontent 按 tag 拉 CHANGELOG.<lang>.md（v1.6.0 起提供 en；逐版翻译，
+    //   老版本在 en 文件里给一行指引回落主文件），404/超时回落 Releases API body（简中主文）。
+    //   回落：随包 CHANGELOG[.<lang>].md（CI 暂存时一并拷入）。
+    // 非 zh 系 locale 才走 en 文件；zh / zh-TW / 缺省走主文件（简中/繁中由主文承载，繁中词典覆盖 UI 不覆盖日志正文）。
+    const briefLocale = (() => { try { return I18N ? I18N.getLocale() : ''; } catch { return ''; } })();
+    const briefLang = /^en/i.test(briefLocale) ? 'en' : '';
+    const langFile = (base) => (briefLang ? path.join(serverRoot, `CHANGELOG.${briefLang}.md`) : path.join(serverRoot, base));
     try {
       const m = /^https?:\/\/github\.com\/([^/]+)\/([^/#?]+)/.exec(daemonInfo.homepage || DEFAULT_HOMEPAGE);
       if (!m) throw new Error(Tt('无法从项目主页识别 GitHub 仓库'));
       const repo = `${m[1]}/${m[2].replace(/\.git$/, '')}`;
+      const parseMdSections = (md) => {
+        const sections = [];
+        for (const raw of String(md).split('\n')) {
+          const h = /^##\s*\[([^\]]+)\](?:\s*\(([^)]+)\))?/.exec(raw.trim());
+          if (h) { sections.push({ version: h[1].replace(/^v/i, ''), date: h[2] || '', theme: '', topics: [] }); continue; }
+          const s = sections[sections.length - 1];
+          if (!s) continue;
+          const line = raw.trim();
+          if (!s.theme && line.startsWith('本版主题:')) s.theme = line.slice(5).trim();
+          else if (!s.theme && /^Theme[:：]/.test(line)) s.theme = line.replace(/^Theme[:：]\s?/, '');
+          else if (!s.theme && /^主题[:：]/.test(line)) s.theme = line.replace(/^主题[:：]\s?/, '');
+          else if (line.startsWith('### ')) s.topics.push(line.slice(4).trim());
+        }
+        return sections;
+      };
+      if (briefLang) {
+        // 按 tag 逐个拉对应语言文件（前 6 个版本）；某个 tag 没有该语言文件就回落该版 releases body
+        try {
+          const relsRes = await net.fetch(`https://api.github.com/repos/${repo}/releases?per_page=6`, {
+            headers: { Accept: 'application/vnd.github+json' },
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (!relsRes.ok) throw new Error(`HTTP ${relsRes.status}`);
+          const rels = await relsRes.json();
+          if (!Array.isArray(rels) || !rels.length) throw new Error(Tt('Releases 列表为空'));
+          const sections = [];
+          for (const r of rels.slice(0, 6)) {
+            try {
+              const rawRes = await net.fetch(`https://raw.githubusercontent.com/${repo}/${r.tag_name}/CHANGELOG.${briefLang}.md`, {
+                signal: AbortSignal.timeout(10_000),
+              });
+              if (!rawRes.ok) throw new Error(`HTTP ${rawRes.status}`);
+              const md = await rawRes.text();
+              const hit = parseMdSections(md).find((s) => s.version === r.tag_name.replace(/^v/i, ''));
+              if (hit) { hit.date = String(r.published_at || '').slice(0, 10); sections.push(hit); continue; }
+              throw new Error('section not found');
+            } catch { sections.push(parseBody(r.tag_name, r.body || '', r.published_at)); }
+          }
+          return { ok: true, online: true, sections };
+        } catch { /* 逐文件拉取失败 → 落到随包语言文件回落 */ }
+      }
       const res = await net.fetch(`https://api.github.com/repos/${repo}/releases?per_page=6`, {
         headers: { Accept: 'application/vnd.github+json' },
         signal: AbortSignal.timeout(10_000),   // 在线失败快速回落本地文件，面板点「更新日志」不长时间空转
@@ -1341,9 +1390,11 @@ function registerAuthWindowIpc() {
       if (!Array.isArray(rels) || !rels.length) throw new Error(Tt('Releases 列表为空'));
       return { ok: true, online: true, sections: rels.slice(0, 6).map((r) => parseBody(r.tag_name, r.body || '', r.published_at)) };
     } catch {
-      // 回落：解析随包 CHANGELOG.md（打包时快照）
+      // 回落：解析随包 CHANGELOG[.<lang>].md（打包时快照；语言文件缺失回落主文件）
       try {
-        const md = fs.readFileSync(path.join(serverRoot, 'CHANGELOG.md'), 'utf8');
+        let md;
+        try { md = fs.readFileSync(langFile('CHANGELOG.md'), 'utf8'); }
+        catch { md = fs.readFileSync(path.join(serverRoot, 'CHANGELOG.md'), 'utf8'); }
         const sections = [];
         for (const raw of String(md).split('\n')) {
           const h = /^##\s*\[([^\]]+)\](?:\s*\(([^)]+)\))?/.exec(raw.trim());
