@@ -7,14 +7,25 @@
 ## [Unreleased]
 
 - 【已排期·双侧】MiniMax 签到徽章 10Router 消费侧（10R#77）：external-quota 白名单放行 `checkinToday` / `streakDays` + 卡面「今日已签」徽章；CD 出口已随 1.6.0 发出。
-- 【1.6.0 未发·随本版走】2026-10-21 六连修复（详见 docs/incident-20261021-quota-sync.md）:本地打包前重暂存流程修正 + minimax-free 旧聚合卡升级一次性清理（230e2fd）+ 「额度卡片推送设置」改名（bea2acb）+ i18n 死词条全量清理 86×4（8c8683a）+ TraeWork→TRAE 迁移适配（探测顺序新 TRAE 优先 + 国际版客户端导入警示，5b5aab6）+ cookie 收割后账号卡余额即刻刷新（b6f6dad）+ mirasim 用量只同步官方中继行（cf60179，修 10R 同批调用双记）。
-- 【10R 侧·已完成待观察】10Router 存量 mirasim 重复行清理（usageHistory 删 4,066 行 + usageDaily 聚合按备份重写，终态 mirasim-anthropic=342 纯官方中继真值）；备份 `data.sqlite.bak-mirasim-dedup-1021` 留观一周后删。
 
 ---
 
-## [1.6.0] (2026-10-20)
+## [1.6.0] (2026-10-21)
 
-本版主题:**Trae 9074 换设备号重试（#31）+ WorkBuddy 国际版「活跃领取」机制下线 + 豆包每日签到第 8 产品线（#32）+ MiniMax 免费额度卡回归 10Router 并带只读签到状态（#33 方案 B）**。
+> **同版重发说明（2026-10-21）**：1.6.0 首发构建（tag 未打，无线上产物）后当日连修六笔（详见 docs/incident-20261021-quota-sync.md），全部并入本版随 tag 一次发出；此前分发的本地测试包（81b02e0 / 5b5aab6 / b6f6dad 等 build）与本 tag 构建并存，以本 tag 产物为准。
+
+本版主题:**Trae 9074 换设备号重试（#31）+ WorkBuddy 国际版「活跃领取」机制下线 + 豆包每日签到第 8 产品线（#32）+ MiniMax 免费额度卡回归 10Router 并带只读签到状态（#33 方案 B）+ 2026-10-21 六连修复**。
+
+### 🔧 修复（2026-10-21 六连，详见 docs/incident-20261021-quota-sync.md）
+
+- **mirasim 用量只同步官方中继行**（cf60179）:直连上游的调用（本机 10Router 已原生记账）不再导入——修 10R 用量表同批调用双记（同名模型出 codebuddy-cn 与 mirasim-anthropic 两行）；viaRelay 分界实测零交叉，配套 10R 侧存量重复清理（usageHistory 删 4,066 行 + usageDaily 聚合按备份重写，终态 342 纯官方中继真值）。
+- **minimax-free 旧聚合卡升级一次性清理**（230e2fd）:按账号单卡换代后旧 source 无人推也无删除，升级用户旧卡挂满 7 天 TTL 与新卡并存——首轮推送自动 DELETE 旧卡。
+- **TraeWork→TRAE 迁移适配**（5b5aab6）:客户端探测顺序新 TRAE CN 优先（SOLO CN 已停发，残留目录陈旧凭据不再首选）+ 国际版客户端（trae.ai）导入时面板明确警示「仅支持国内版」，不再静默导入空额度卡。
+- **cookie 收割后账号卡余额即刻刷新**（b6f6dad）:onCookieCaptured 漏拉 quota 缓存，小米等网页会话收割成功后卡面旧数字挂到手动刷新。
+- **「免费额度推送设置」改名「额度卡片推送设置」**（bea2acb）:推送范围含订阅/储值线不全是免费；四语词条同步。
+- **i18n 死词条全量清理**（8c8683a）:86 条无引用旧文案 ×4 语移除（1783→1699）；两轮核验防误删（转义归一 + 标点归一 + 前缀碎片匹配）。
+
+### ✨ 新功能
 
 ### ✨ 新功能
 
