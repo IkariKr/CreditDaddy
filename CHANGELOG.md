@@ -41,11 +41,6 @@
 
 - **WorkBuddy 国际版「活跃领取」机制整体下线**（口径此前已定）:逐日主动打上游对话接口博活跃资格的灰色路径删除（服务端已收紧识别，issue #34 实证「请求非法」）——`checkinWorkbuddyIntl`、签到轮 wbActivity 开关与设置项、面板活跃统计 UI、行为测试与 18 条死词条 ×4 语全部清退；**workbuddy-intl 产品线保留**（登录 / 额度 / 赠送包余量 / 到期提醒 / 10R 推送照常），国内版每日签到不受影响。国际版积分获取引导改用官方网页版定时任务（codebuddy.ai/agents，#34 回复口径）。
 
----
-
-
-- 【计划】Trae 签到 9074 设备号轮换重试（issue #31 报告者实测反馈）：派生设备号被服务端一律拒 9074、同一时刻真机设备号可领——9074 重试时轮换派生设备号（每号确定性 + attempt 参数，跨天稳定、账号间不碰撞），不再固定同号退避。
-- 【计划】彻底删除 WorkBuddy 国际版「活跃领取」线（用户指定下版本执行）：workbuddyClient 活跃探测/领取（checkinWorkbuddyIntl / no-activity 语义）、checkin 全局开关 wbActivity 与 daemon 设置项、面板「设置 → 通用」开关 UI、providers.js intl 分支、i18n 相关词条。口径已定（用户确认）：**只删「活跃领取」机制本体**，workbuddy-intl 产品线保留（workbuddy.ai 登录 / 用量查看照常），不动 constants PROVIDERS / tenrouterAccounts 映射 / transfer 别名 / authDevice 登录入口，无存量账号清理。
 
 ---
 
