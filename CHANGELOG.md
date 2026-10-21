@@ -7,6 +7,8 @@
 ## [Unreleased]
 
 - 【已排期·双侧】MiniMax 签到徽章 10Router 消费侧（10R#77）：external-quota 白名单放行 `checkinToday` / `streakDays` + 卡面「今日已签」徽章；CD 出口已随 1.6.0 发出。
+- 【1.6.0 未发·随本版走】2026-10-21 六连修复（详见 docs/incident-20261021-quota-sync.md）:本地打包前重暂存流程修正 + minimax-free 旧聚合卡升级一次性清理（230e2fd）+ 「额度卡片推送设置」改名（bea2acb）+ i18n 死词条全量清理 86×4（8c8683a）+ TraeWork→TRAE 迁移适配（探测顺序新 TRAE 优先 + 国际版客户端导入警示，5b5aab6）+ cookie 收割后账号卡余额即刻刷新（b6f6dad）+ mirasim 用量只同步官方中继行（cf60179，修 10R 同批调用双记）。
+- 【10R 侧·已完成待观察】10Router 存量 mirasim 重复行清理（usageHistory 删 4,066 行 + usageDaily 聚合按备份重写，终态 mirasim-anthropic=342 纯官方中继真值）；备份 `data.sqlite.bak-mirasim-dedup-1021` 留观一周后删。
 
 ---
 
