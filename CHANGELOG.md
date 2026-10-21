@@ -27,8 +27,6 @@
 
 ### ✨ 新功能
 
-### ✨ 新功能
-
 - **豆包（doubao.com）每日签到接入（issue #32，第 8 条产品线，网页会话捕获线）**:接口形状经 CDP 调试端口两轮实测（已签 + 未签场景）——`POST /alice/ug/campaign/v3/detail/` 查状态、`POST /alice/ug/campaign/landing/checkin` 领取（+200 额度/天）；纯 cookie 鉴权、无 a_bogus/msToken 签名风控、服务端幂等（重复领取 `idempotent:true` 归 already）；cookieSites 探测框架升级支持 method/body（JSON API 探测先例）。参与门槛实测确认：**仅个人账号**（飞书企业号被排除，错误如实透出）；活动页「仅支持电脑版」为前端墙，接口不吃这套。
 - **MiniMax 免费额度卡回归 10Router + 只读签到状态推送（issue #33，方案 B）**:撤掉每轮推送对 minimax-code 卡片的清理（此前 10R 下架 minimax-free 后无挂靠点而停用），恢复推送并在每行配额带 `checkinToday` / `streakDays` 只读字段——凭据不出 CD，10R 只展示（徽章渲染由 10Router#77 消费，旧版 10R 忽略未知字段向前兼容）；**签到动作不进 10R**（只读边界）。新增 `fetchMiniMaxCheckinStatus` 只查不打 claim，失败返 null 不炸推送。
 - **WorkBuddy 临时活动批量领取**（ec95ffa，随本版首发）:新增 `POST /api/workbuddy/claim-activities` 批量领取临时活动（额外补偿 / 首月赠礼），面板一键领全部账号。
