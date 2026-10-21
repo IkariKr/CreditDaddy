@@ -193,7 +193,7 @@ function isNewerVersion(next, cur) {
 async function fetchLatestReleaseFromGitHub() {
   const m = /^https:\/\/github\.com\/([^/]+)\/([^/#?]+)/.exec(daemonInfo.homepage || DEFAULT_HOMEPAGE);
   if (!m) throw new Error(Tt('无法从项目主页识别 GitHub 仓库'));
-  const repo = `${m[1]}/${m[2].replace(/\.git$/, '')}`;
+  const repo = m[1] + '/' + m[2].replace(/\.git$/, '');
   const res = await net.fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
     headers: { Accept: 'application/vnd.github+json' },
   });
@@ -1335,11 +1335,11 @@ function registerAuthWindowIpc() {
     // 非 zh 系 locale 才走 en 文件；zh / zh-TW / 缺省走主文件（简中/繁中由主文承载，繁中词典覆盖 UI 不覆盖日志正文）。
     const briefLocale = (() => { try { return I18N ? I18N.getLocale() : ''; } catch { return ''; } })();
     const briefLang = /^en/i.test(briefLocale) ? 'en' : '';
-    const langFile = (base) => (briefLang ? path.join(serverRoot, `CHANGELOG.${briefLang}.md`) : path.join(serverRoot, base));
+    const langFile = (base) => (briefLang ? path.join(serverRoot, 'CHANGELOG.' + briefLang + '.md') : path.join(serverRoot, base));
     try {
       const m = /^https?:\/\/github\.com\/([^/]+)\/([^/#?]+)/.exec(daemonInfo.homepage || DEFAULT_HOMEPAGE);
       if (!m) throw new Error(Tt('无法从项目主页识别 GitHub 仓库'));
-      const repo = `${m[1]}/${m[2].replace(/\.git$/, '')}`;
+      const repo = m[1] + '/' + m[2].replace(/\.git$/, '');
       const parseMdSections = (md) => {
         const sections = [];
         for (const raw of String(md).split('\n')) {
