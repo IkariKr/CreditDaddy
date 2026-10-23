@@ -1711,5 +1711,10 @@
   "<span class=\"lbl\">待生效</span>": "<span class=\"lbl\">Pending</span>",
   "已重新启动 Qoder 客户端": "Qoder client relaunched",
   "无法打开 Qoder 客户端（桌面版才能自动拉起）": "Cannot open Qoder client (auto-launch requires the desktop app)",
-  "未找到 Qoder 客户端可执行文件": "Qoder client executable not found"
+  "未找到 Qoder 客户端可执行文件": "Qoder client executable not found",
+  "账号管理": "Accounts",
+  "账号同步与网页会话 Cookie 捕获": "Account sync and web-session cookie capture",
+  "把本机 Qoder / WorkBuddy 账号推为 10Router 上游连接。": "Push local Qoder / WorkBuddy accounts to 10Router as upstream connections.",
+  "填 10Router 面板密码，走 OAuth 通道（带 refreshToken 自动续期）；不填则按已保存的走": "Enter the 10Router admin password to use the OAuth channel (keeps refreshToken for auto-renewal); leave blank to use the saved one",
+  "同步账号中…": "Syncing accounts…"
 }

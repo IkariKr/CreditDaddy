@@ -803,9 +803,6 @@
     <div class="field" style="margin-top:12px"><label data-i18n="10Router 地址">10Router 地址</label><input class="input mono" id="tr-endpoint" placeholder="http://127.0.0.1:20128（站点根地址，不要带 /v1）"></div>
     <div class="field"><label data-i18n="虚拟 key">虚拟 key</label><input class="input mono" id="tr-key" placeholder="sk-…" autocomplete="off"></div>
     <div class="field"><label data-i18n="10Router 面板密码（可选）">10Router 面板密码（可选）</label><input class="input mono" id="tr-admin-pw" type="password" placeholder="配置后「同步账号」走 OAuth 通道（带 refreshToken 自动续期）；留空保持不变" autocomplete="new-password"></div>
-    <div class="field"><label data-i18n="账号同步">账号同步</label>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" id="tr-sync-accounts" data-i18n="同步账号到 10R">同步账号到 10R</button><span class="hint" data-i18n="把本机 Qoder / WorkBuddy 账号推为 10Router 上游连接；zcode 待反代就绪后支持">把本机 Qoder / WorkBuddy 账号推为 10Router 上游连接；zcode 待反代就绪后支持</span></div>
-    </div>
     <div class="field"><label data-i18n="显示">显示</label>
       <div><label class="check"><input type="checkbox" id="tr-hide-empty"> 「全部」视图隐藏没有额度 / 余额为 0 的供应商汇总卡</label></div>
     </div>
@@ -866,15 +863,25 @@
   </div>
 </div>
 
-<div class="mask" id="m-cookie">
+<!-- 10Router 账号管理：账号同步 + 网页会话 Cookie 捕获（原「Cookie 会话」按钮与「设置」里的账号同步合并） -->
+<div class="mask" id="m-am">
   <div class="modal">
-    <div class="modal-title"><span data-i18n="Cookie 会话捕获">Cookie 会话捕获</span><button class="close" data-close>✕</button></div>
-    <div class="hint" data-i18n="为「额度只在网页 dashboard」的供应商捕获登录会话(cookie),同步给 10Router 点亮配额卡片;凭据全程只存本机(账号库加密)。">为「额度只在网页 dashboard」的供应商捕获登录会话(cookie),同步给 10Router 点亮配额卡片;凭据全程只存本机(账号库加密)。</div>
-    <div id="cookie-sites-body" style="margin-top:10px;display:grid;gap:8px"></div>
+    <div class="modal-title"><span data-i18n="账号管理">账号管理</span><button class="close" data-close>✕</button></div>
+    <div class="field"><label data-i18n="账号同步">账号同步</label>
+      <div class="hint" style="margin-bottom:8px" data-i18n="把本机 Qoder / WorkBuddy 账号推为 10Router 上游连接。">把本机 Qoder / WorkBuddy 账号推为 10Router 上游连接。</div>
+      <input class="input mono" id="am-pw" type="password" autocomplete="new-password">
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <button class="btn" id="am-sync"><span class="dot"></span><span class="lbl">同步账号到 10R</span></button>
+        <span class="hint" id="am-sync-msg"></span>
+      </div>
+    </div>
+    <div class="field" style="margin-top:14px"><label data-i18n="网页会话">网页会话</label>
+      <div class="hint" data-i18n="为「额度只在网页 dashboard」的供应商捕获登录会话(cookie),同步给 10Router 点亮配额卡片;凭据全程只存本机(账号库加密)。">为「额度只在网页 dashboard」的供应商捕获登录会话(cookie),同步给 10Router 点亮配额卡片;凭据全程只存本机(账号库加密)。</div>
+      <div id="cookie-sites-body" style="margin-top:10px;display:grid;gap:8px"></div>
+    </div>
     <div class="modal-actions"><button class="btn" data-close data-i18n="关闭">关闭</button></div>
   </div>
 </div>
-
 <!-- 通用对话框 -->
 <div class="mask" id="m-dialog">
   <div class="modal sm">
@@ -1027,7 +1034,7 @@ const $ = (id) => document.getElementById(id);
 const state = { accounts: [], quotas: {}, status: null, busy: {}, view: 'dash', region: '', addProduct: '', logTab: 'run', logLevel: 'all', locale: 'zh-CN' };
 const VIEWS = ['dash', 'qoder', 'workbuddy', 'zcode', 'mirasim', 'catpaw', 'trae', 'minimax', 'free', 'tenrouter'];
 // 10Router 集成：config 来自 /api/tenrouter，quotas 来自 /api/tenrouter/quotas
-const tr = { config: null, quotas: null, error: null, loading: false, syncing: false };
+const tr = { config: null, quotas: null, error: null, loading: false, syncing: false, accountsSyncing: false };
 const PRODUCTS = [
   { id: 'qoder', label: 'Qoder' },
   { id: 'workbuddy', label: 'WorkBuddy' },
@@ -2769,13 +2776,52 @@ function renderCookieSites() {
       + hint + accRows + '</div>';
   }).join('');
 }
-function openCookieSitesModal() {
-  const body = $('cookie-sites-body');
-  if (body) body.innerHTML = T('<div class="dim">加载中…</div>');
-  openModal('m-cookie');
-  loadCookieSites(true).then(() => renderCookieSites());
+/**
+ * 「账号管理」弹窗：把两件同性质的事收在一处——
+ *   1. 账号同步：本机 Qoder / WorkBuddy 账号推为 10Router 上游连接（原藏在「设置」弹窗底部）
+ *   2. Cookie 会话：网页会话型供应商的捕获入口（原名「Cookie 会话」按钮）
+ * 面板密码栏同步展示：账号同步走 OAuth 通道时要它（带 refreshToken，自动续期）。
+ */
+function openTrAccountManage() {
+  if (!(tr.config && tr.config.configured)) return toast(T('请先保存 10Router 设置'), false);
+  $('am-sync-msg').textContent = '';
+  $('am-pw').value = '';
+  $('am-pw').placeholder = T('填 10Router 面板密码，走 OAuth 通道（带 refreshToken 自动续期）；不填则按已保存的走');
+  const btn = $('am-sync');
+  btn.disabled = false;
+  btn.querySelector('.dot').className = 'dot' + (tr.config.configured ? ' on' : '');
+  btn.querySelector('.lbl').textContent = T('同步账号到 10R');
+  loadCookieSites(true).then(() => renderCookieSites()).catch(() => {});
+  openModal('m-am');
 }
-document.getElementById('m-cookie')?.addEventListener('click', (e) => {
+async function trSyncAccountsFromModal() {
+  if (!(tr.config && tr.config.configured)) return toast(T('请先保存 10Router 设置'), false);
+  const btn = $('am-sync');
+  const msg = $('am-sync-msg');
+  const pw = $('am-pw').value;
+  btn.disabled = true;
+  btn.querySelector('.dot').className = 'dot on pulse';
+  btn.querySelector('.lbl').textContent = T('同步账号中…');
+  tr.accountsSyncing = true;
+  renderTenrouter();
+  try {
+    const r = await api('/api/tenrouter/sync-accounts', { method: 'POST', json: pw ? { adminPassword: pw } : {} });
+    msg.textContent = r.summary || '';
+    toast(r.summary, !/失败/.test(r.summary || ''));
+    if (pw) { await loadTrConfig(); $('am-pw').value = ''; }
+    loadLogs();
+  } catch (e) {
+    msg.textContent = e.message;
+    toast(e.message, false);
+  } finally {
+    tr.accountsSyncing = false;
+    btn.disabled = false;
+    btn.querySelector('.dot').className = 'dot on';
+    btn.querySelector('.lbl').textContent = T('同步账号到 10R');
+    renderTenrouter();
+  }
+}
+document.getElementById('m-am')?.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('[data-capture-site]');
   if (b) cookieSiteCapture(b.dataset.captureSite);
 });
@@ -2811,11 +2857,13 @@ $('btn-free-refresh')?.addEventListener('click', () => {
 $('btn-free-settings')?.addEventListener('click', openFreeSettings);
 // 「同步到 10Router」= 推连接（会话凭据）+ 推额度卡（issue #24 数字快照），一键两路
 $('btn-free-sync-10r')?.addEventListener('click', async () => {
-  await trSyncAccounts();
   const btn = $('btn-free-sync-10r');
-  if (!(tr.config && tr.config.configured)) return;
+  if (!(tr.config && tr.config.configured)) return toast(T('请先保存 10Router 设置'), false);
   btn.disabled = true;
   try {
+    // 先推账号连接（原 trSyncAccounts 的职责），失败不阻断额度卡推送
+    const sa = await api('/api/tenrouter/sync-accounts', { method: 'POST', json: {} }).catch((e) => ({ summary: e.message, error: true }));
+    if (sa && sa.summary) toast(sa.summary, !sa.error && !/失败/.test(sa.summary));
     const r = await api('/api/tenrouter/push-quota', { method: 'POST' });
     const failed = (r.results || []).filter((x) => x.status === 'failed');
     if (failed.length) toast(T('额度卡部分推送失败：') + failed.map((x) => x.source + '（' + x.error + '）').join('；'), false);
@@ -2997,7 +3045,7 @@ function renderTenrouter() {
     + T('<button class="btn" data-tr="sync" title="用量同步：自动开关、同步来源与手动同步（点我打开）"') + (tr.syncing || c.syncing ? ' disabled' : '') + '>'
     + '<span class="dot' + (c.sync.enabled ? ' on' : '') + '"></span>' + (tr.syncing || c.syncing ? T('同步中…') : T('用量同步')) + '</button>'
     + T('<button class="btn" data-tr="settings">设置</button>')
-    + T('<button class="btn" data-tr="cookie-sites" title="Token Harbor 等网页会话型供应商">Cookie 会话</button>')
+    + '<button class="btn" data-tr="account-manage" title="' + T('账号同步与网页会话 Cookie 捕获') + '">' + T('账号管理') + '</button>'
     + '</div></div>'
     + tabStrip
     + '<div class="tr-grid">' + grid + '</div>';
@@ -3118,19 +3166,6 @@ async function trDisconnect() {
   try { tr.config = await api('/api/tenrouter', { method: 'DELETE' }); tr.quotas = null; tr.error = null; closeModal('m-10r'); render(); }
   catch (e) { toast(e.message, false); }
 }
-async function trSyncAccounts() {
-  if (!(tr.config && tr.config.configured)) return toast(T('请先保存 10Router 设置'), false);
-  const btn = $('tr-sync-accounts');
-  const pw = $('tr-admin-pw').value;
-  btn.disabled = true;
-  try {
-    const r = await api('/api/tenrouter/sync-accounts', { method: 'POST', json: pw ? { adminPassword: pw } : {} });
-    toast(r.summary, !/失败/.test(r.summary));
-    if (pw) await loadTrConfig();
-    loadLogs();
-  } catch (e) { toast(e.message, false); }
-  btn.disabled = false;
-}
 $('tr-panel').addEventListener('click', (e) => {
   const b = e.target.closest('[data-tr]');
   if (!b) return;
@@ -3138,7 +3173,7 @@ $('tr-panel').addEventListener('click', (e) => {
   if (b.dataset.tr === 'settings') openTrSettings();
   else if (b.dataset.tr === 'refresh') loadTrQuotas(true);
   else if (b.dataset.tr === 'sync') openTrSync();
-  else if (b.dataset.tr === 'cookie-sites') goView('free');
+  else if (b.dataset.tr === 'account-manage') openTrAccountManage();
   else if (b.dataset.tr === 'vendor') {
     const v = b.dataset.v || '';
     state.trVendor = v;
@@ -3154,7 +3189,7 @@ $('tr-sync-now').onclick = async () => {
   trSync();
   api('/api/tenrouter/push-quota', { method: 'POST' }).catch(() => {});
 };
-$('tr-sync-accounts').onclick = trSyncAccounts;
+$('am-sync').onclick = trSyncAccountsFromModal;
 $('tr-save').onclick = trSave;
 $('tr-disconnect').onclick = trDisconnect;
 

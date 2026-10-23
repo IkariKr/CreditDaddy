@@ -1711,5 +1711,10 @@
   "<span class=\"lbl\">待生效</span>": "<span class=\"lbl\">待生效</span>",
   "已重新启动 Qoder 客户端": "已重新啟動 Qoder 客戶端",
   "无法打开 Qoder 客户端（桌面版才能自动拉起）": "無法打開 Qoder 客戶端（桌面版才能自動拉起）",
-  "未找到 Qoder 客户端可执行文件": "未找到 Qoder 客戶端可執行文件"
+  "未找到 Qoder 客户端可执行文件": "未找到 Qoder 客戶端可執行文件",
+  "账号管理": "账号管理",
+  "账号同步与网页会话 Cookie 捕获": "賬號同步與網頁會話 Cookie 捕獲",
+  "把本机 Qoder / WorkBuddy 账号推为 10Router 上游连接。": "把本機 Qoder / WorkBuddy 賬號推為 10Router 上游連接。",
+  "填 10Router 面板密码，走 OAuth 通道（带 refreshToken 自动续期）；不填则按已保存的走": "填 10Router 面板密碼，走 OAuth 通道（帶 refreshToken 自動續期）；不填則按已保存的走",
+  "同步账号中…": "同步賬號中…"
 }
