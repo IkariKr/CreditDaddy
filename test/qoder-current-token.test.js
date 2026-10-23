@@ -14,7 +14,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const DPAPI_KEY = (() => {
+// 密钥要在测试体里造：模块加载期就调 powershell，Linux runner 会在收集阶段
+// 直接 ENOENT 崩掉整个文件，{ skip } 形同废纸（CI 三条 job 全红的真因）。
+function makeDpapiKey() {
   const key = crypto.randomBytes(32);
   const script = 'Add-Type -AssemblyName System.Security;'
     + '$b=[Convert]::FromBase64String([Console]::In.ReadToEnd());'
@@ -23,16 +25,16 @@ const DPAPI_KEY = (() => {
   const prot = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
     { windowsHide: true, input: key.toString('base64'), timeout: 20_000, encoding: 'utf8' }).trim();
   return { key, encryptedKey: Buffer.concat([Buffer.from('DPAPI'), Buffer.from(prot, 'base64')]).toString('base64') };
-})();
-
-function encryptAuth(text) {
-  const nonce = crypto.randomBytes(12);
-  const c = crypto.createCipheriv('aes-256-gcm', DPAPI_KEY.key, nonce);
-  const ct = Buffer.concat([c.update(text, 'utf8'), c.final()]);
-  return Buffer.concat([Buffer.from('v10'), nonce, ct, c.getAuthTag()]);
 }
 
 test('Qoder 当前登录按 token 对齐：同 uid 换 token 也认得出；切号后 status 立即更新', { skip: process.platform !== 'win32' && '依赖 DPAPI' }, async () => {
+  const DPAPI_KEY = makeDpapiKey();
+  const encryptAuth = (text) => {
+    const nonce = crypto.randomBytes(12);
+    const c = crypto.createCipheriv('aes-256-gcm', DPAPI_KEY.key, nonce);
+    const ct = Buffer.concat([c.update(text, 'utf8'), c.final()]);
+    return Buffer.concat([Buffer.from('v10'), nonce, ct, c.getAuthTag()]);
+  };
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qoder-current-'));
   const appData = path.join(root, 'Roaming');
   const dir = path.join(appData, 'com.qoder.app.stable');
@@ -70,7 +72,12 @@ test('Qoder 当前登录按 token 对齐：同 uid 换 token 也认得出；切�
     assert.equal(st2.qoderCurrentToken.qoder, 'dt-b');
   } finally {
     server?.close();
+    // 日志归档流还指着 root/cd/logs：不先关掉就 rm，Windows 会 ENOTEMPTY
+    const { closeArchiveStream } = await import('../src/logger.js');
+    await closeArchiveStream();
     for (const [k, v] of Object.entries(prev)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-    fs.rmSync(root, { recursive: true, force: true });
+    for (let i = 0; i < 8; i++) {
+      try { fs.rmSync(root, { recursive: true, force: true }); break; } catch { await new Promise((r) => setTimeout(r, 150)); }
+    }
   }
 });
