@@ -1708,5 +1708,8 @@
   "到账": "到賬",
   "即将到账": "即將到賬",
   "更新 Qoder 快照路径失败:{err}": "更新 Qoder 快照路徑失敗:{err}",
-  "<span class=\"lbl\">待生效</span>": "<span class=\"lbl\">待生效</span>"
+  "<span class=\"lbl\">待生效</span>": "<span class=\"lbl\">待生效</span>",
+  "已重新启动 Qoder 客户端": "已重新啟動 Qoder 客戶端",
+  "无法打开 Qoder 客户端（桌面版才能自动拉起）": "無法打開 Qoder 客戶端（桌面版才能自動拉起）",
+  "未找到 Qoder 客户端可执行文件": "未找到 Qoder 客戶端可執行文件"
 }

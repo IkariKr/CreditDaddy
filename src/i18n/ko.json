@@ -1708,5 +1708,8 @@
   "到账": "지급",
   "即将到账": "곧 지급",
   "更新 Qoder 快照路径失败:{err}": "Qoder 스냅샷 경로 업데이트 실패: {err}",
-  "<span class=\"lbl\">待生效</span>": "<span class=\"lbl\">적용 대기</span>"
+  "<span class=\"lbl\">待生效</span>": "<span class=\"lbl\">적용 대기</span>",
+  "已重新启动 Qoder 客户端": "Qoder 클라이언트를 다시 시작했습니다",
+  "无法打开 Qoder 客户端（桌面版才能自动拉起）": "Qoder 클라이언트를 열 수 없습니다(자동 실행은 데스크톱 앱만 지원)",
+  "未找到 Qoder 客户端可执行文件": "Qoder 클라이언트 실행 파일을 찾을 수 없습니다"
 }

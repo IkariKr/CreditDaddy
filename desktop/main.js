@@ -1521,6 +1521,26 @@ function registerAuthWindowIpc() {
       return { ok: false, error: Tt('未找到 Trae 客户端可执行文件') };
     } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
   });
+  // Qoder 页切换后「打开客户端」：切号会先关掉运行中的 Qoder，写完登录再拉起来，
+  // 省得用户自己去找快捷方式（与 ZCode / mirasim 的切完自动拉起一致）
+  ipcMain.handle('open-qoder-client', async (_e, provider) => {
+    try {
+      const os = require('node:os');
+      const fs = require('node:fs');
+      const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+      // 只拉目标渠道那个客户端：切的是国内版就别把国际版一起打开
+      const names = provider === 'qoder-cn' ? ['Qoder CN'] : ['Qoder'];
+      for (const n of names) {
+        const cand = path.join(local, 'Programs', n, n + '.exe');
+        if (process.platform === 'win32' && fs.existsSync(cand)) {
+          const err = await shell.openPath(cand);
+          if (!err) return { ok: true };
+          return { ok: false, error: err };
+        }
+      }
+      return { ok: false, error: Tt('未找到 Qoder 客户端可执行文件') };
+    } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+  });
   // MiniMax Code 页「打开客户端」
   ipcMain.handle('open-minimax-client', async () => {
     try {

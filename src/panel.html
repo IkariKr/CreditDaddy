@@ -3388,6 +3388,16 @@ async function onCardClick(e) {
           } catch (e) {}
         }, 800);
       }
+      if (a && a.product === 'qoder' && r && !r.alreadyActive && window.creditdaddy && typeof window.creditdaddy.openQoderClient === 'function') {
+        // 强制切换会先关掉 Qoder：写完登录自动拉起来，不然用户得自己找快捷方式
+        setTimeout(async () => {
+          try {
+            const re = await window.creditdaddy.openQoderClient(a.provider);
+            if (re && re.ok) toast(T('已重新启动 Qoder 客户端'));
+            else toast((re && re.error) || T('无法打开 Qoder 客户端（桌面版才能自动拉起）'), false);
+          } catch (e) {}
+        }, 800);
+      }
       if (a && a.product === 'trae' && r && !r.alreadyActive && window.creditdaddy && typeof window.creditdaddy.openTraeClient === 'function') {
         setTimeout(async () => {
           try {

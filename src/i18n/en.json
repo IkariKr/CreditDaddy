@@ -1708,5 +1708,8 @@
   "到账": "arrives",
   "即将到账": "arriving soon",
   "更新 Qoder 快照路径失败:{err}": "Failed to update Qoder snapshot path: {err}",
-  "<span class=\"lbl\">待生效</span>": "<span class=\"lbl\">Pending</span>"
+  "<span class=\"lbl\">待生效</span>": "<span class=\"lbl\">Pending</span>",
+  "已重新启动 Qoder 客户端": "Qoder client relaunched",
+  "无法打开 Qoder 客户端（桌面版才能自动拉起）": "Cannot open Qoder client (auto-launch requires the desktop app)",
+  "未找到 Qoder 客户端可执行文件": "Qoder client executable not found"
 }

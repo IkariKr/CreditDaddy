@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('creditdaddy', {
   openCatpawClient: () => ipcRenderer.invoke('open-catpaw-client'),
   /** 打开本机 Trae 客户端 @returns {Promise<{ok: boolean, error?: string}>} */
   openTraeClient: () => ipcRenderer.invoke('open-trae-client'),
+  /** 打开本机 Qoder 客户端（按渠道：qoder / qoder-cn）@returns {Promise<{ok: boolean, error?: string}>} */
+  openQoderClient: (provider) => ipcRenderer.invoke('open-qoder-client', String(provider || 'qoder')),
   openDoubaoClient: () => ipcRenderer.invoke('open-doubao-client'),
   /** 打开本机 MiniMax Code 客户端 @returns {Promise<{ok: boolean, error?: string}>} */
   openMiniMaxClient: () => ipcRenderer.invoke('open-minimax-client'),
