@@ -496,7 +496,16 @@ export async function switchTo(account, { force = false } = {}) {
   if (!auth || !file) {
     throw new Error(`账号「${account.name || account.id}」没有本机登录快照，无法切换：请在 Qoder 里登录该账号后到「添加账号 → 本机导入」导入一次`);
   }
-  if (!fs.existsSync(file)) throw new Error(`Qoder 凭据文件不存在：${file}（客户端可能被卸载或换了数据目录）`);
+  if (!fs.existsSync(file)) {
+    // 本机当初导入时文件是在的，现在没了：绝大多数情况是客户端退出登录（登出/换号后它会删掉
+    // auth.v1.dat），只有少数是卸载或换了数据目录。按发生率给指引，别让人以为软件坏了。
+    const app = detectQoderApps().find((a) => a.provider === account.provider);
+    const label = app?.label || (account.provider === 'qoder-cn' ? 'Qoder 国内版' : 'Qoder 国际版');
+    const hint = app?.installed
+      ? `请打开「${label}」客户端确认已登录该账号，然后到「添加账号 → 本机导入」重新导入一次`
+      : `没检测到「${label}」客户端，请先安装并登录，然后到「添加账号 → 本机导入」导入`;
+    throw new Error(`账号「${account.name || account.id}」的切换凭据已失效：${label}的登录文件不在了（${file}）。${hint}`);
+  }
   if (!force && qoderRunning()) {
     const e = new Error('Qoder 正在运行。切换会改写 Qoder 的登录文件，运行中的 Qoder 退出时会把旧登录写回去——退出后重试，或选择「关闭并强制切换」。');
     e.qoderRunning = true;
