@@ -10,6 +10,28 @@
 
 ---
 
+## [1.6.1] (2026-10-23)
+
+本版主题:**Qoder 双渠道切号收口 + ZCode 活动权益「待生效」展示 + 10Router 账号管理入口**。
+Theme: Qoder dual-channel switching hardening + ZCode pending-grant display + 10Router account-management entry.
+
+### 🔧 修复
+
+- **Qoder 切号后当前账号判定错位（切换键消失）**：国际 / 国内双渠道来回切，切完面板「客户端当前」对不上实际登录——`/api/status` 的 `qoderCurrent` 原来只按 uid 比对，且结果缓存 60 秒。现改为按 `auth.v1.dat` 解出的 **token 精确对齐账号 id**（uid 兜底），切号成功后立即清缓存；面板 `isClientCurrent()` 按 id 判定。非当前账号的切换按钮不再连带消失。回归：`test/qoder-current-token.test.js`。
+- **Qoder 切换凭据失效时提示指向真实原因**：原提示「凭据文件不存在（客户端可能被卸载或换了数据目录）」把最常见的「客户端退出登录后删掉了 `auth.v1.dat`」说成了换目录。现按探测结果给指引（已安装 → 确认登录后重新导入；未安装 → 先安装登录），并带上账号名与渠道名。
+
+### ✨ 新功能
+
+- **Qoder 切号后自动拉起客户端**：强制切换会先关掉 Qoder，原来切完停在「请重新打开」。现与 ZCode / mirasim / 妙手 / Trae 对齐，写完登录后自动启动，并按渠道只开对应的那一份（国际版 Qoder / 国内版 Qoder CN）。
+- **ZCode 未生效活动权益单独显示「待生效」**：活动权益要到 `effective_at` 才进余额（如 ZCode 1024 Dev Day 的 3 亿 + 2 亿），此前显示成「剩余 0 / 5 亿」，像额度丢了。现全部未生效时主行显示「待生效 5 亿 Token · 活动名 · HH:MM 到账」，进度条用虚线；部分生效时在剩余行下追加待生效行。后端补 `pendingTotal` / `pendingAt` 与每项权益的 `planName`。
+- **10Router「Cookie 会话」改为「账号管理」**：账号同步原来藏在「10Router 连接设置」弹窗最底部，找不到。现工具栏「账号管理」弹窗内分两块——账号同步（推本机 Qoder / WorkBuddy 为上游连接，可填面板密码走 OAuth 通道）与网页会话（Token Harbor 等 Cookie 捕获）。免费额度页「同步到 10Router」仍一键两路（连接 + 额度卡）。
+
+### 🌐 其它
+
+- 补 i18n 词条（待生效 / 到账 / 即将到账 / 账号管理 / Qoder 启动相关）四语同步；`scripts/check-i18n.js` 全量覆盖通过。
+
+---
+
 ## [1.6.0] (2026-10-21)
 
 > **同版重发说明（2026-10-21）**：1.6.0 首发构建（tag 未打，无线上产物）后当日连修六笔（详见 docs/incident-20261021-quota-sync.md），全部并入本版随 tag 一次发出；此前分发的本地测试包（81b02e0 / 5b5aab6 / b6f6dad 等 build）与本 tag 构建并存，以本 tag 产物为准。
