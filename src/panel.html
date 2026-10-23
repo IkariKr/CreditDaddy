@@ -1707,8 +1707,12 @@ function isClientCurrent(a) {
   if (!s) return false;
   if (a.product === 'workbuddy') return Boolean(a.uid && s.workbuddyCurrentUid && s.workbuddyCurrentUid === a.uid);
   if (a.product === 'qoder') {
+    // 服务端按「本机 auth.v1.dat 解出的 token」对齐出账号 id（token 优先、uid 兜底）——
+    // 只看 uid 的话客户端静默刷新 token 后会把别的同 uid 记录误当成当前账号
     const cur = s.qoderCurrent || {};
-    return Boolean(a.uid && cur[a.provider] && String(cur[a.provider]) === String(a.uid));
+    if (cur[a.provider]) return String(cur[a.provider]) === String(a.id);
+    const uid = s.qoderCurrentUid || {};
+    return Boolean(a.uid && uid[a.provider] && String(uid[a.provider]) === String(a.uid));
   }
   if (a.product === 'mirasim') return Boolean(a.uid && s.mirasimCurrentUid && s.mirasimCurrentUid === a.uid);
   if (a.product === 'catpaw') return Boolean(a.uid && s.catpawCurrentUid && s.catpawCurrentUid === a.uid);

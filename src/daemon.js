@@ -176,16 +176,36 @@ export function pickBindablePort(start, ranges = windowsExcludedTcpRanges()) {
 let qoderCurCache = { at: 0, data: null };
 async function qoderCurrentInfo() {
   if (qoderCurCache.data && Date.now() - qoderCurCache.at < 60_000) return qoderCurCache.data;
-  const data = { apps: detectQoderApps(), uids: {}, backfill: [] };
+  const data = { apps: detectQoderApps(), tokens: {}, uids: {}, backfill: [] };
   try {
     const r = await readQoderAppAccounts();
     for (const c of r.accounts) {
+      // 当前登录以 token 为准：客户端静默刷新 / 重新登录后 token 会变而 uid 不变，
+      // 只比 uid 时「当前账号」与切换键状态会错位（用户现场：切完切换键没了）
+      data.tokens[c.provider] = c.token || null;
       data.uids[c.provider] = c.user.id || null;
       if (c.user.id) data.backfill.push({ provider: c.provider, uid: c.user.id, authJson: c.authJson, file: c.file });
     }
   } catch { /* 解密失败只留检测信息 */ }
   qoderCurCache = { at: Date.now(), data };
   return data;
+}
+
+/**
+ * 账号库里哪个账号是本机 Qoder 当前登录：先按 token 精确对齐，token 没对上再退回 uid。
+ * 面板的「客户端当前」角标 / 切换按钮显隐都以这里为准（status.qoderCurrent 的取值）。
+ */
+function qoderCurrentIds(accounts, qoder) {
+  const ids = {};
+  for (const provider of ['qoder', 'qoder-cn']) {
+    const token = qoder.tokens?.[provider];
+    const uid = qoder.uids?.[provider];
+    const sameProvider = accounts.filter((a) => a.provider === provider);
+    const byToken = token ? sameProvider.find((a) => a.token === token) : null;
+    const hit = byToken || (uid ? sameProvider.find((a) => a.uid && String(a.uid) === String(uid)) : null);
+    ids[provider] = hit?.id || null;
+  }
+  return ids;
 }
 
 class HttpError extends Error {
@@ -973,6 +993,16 @@ async function handleApi(req, res, url) {
           else if (t.running) logger.warn('DAEMON', '未能完全结束 Qoder 进程,继续强制切换', {});
         }
         const r = await qoderSwitchTo(target, { force: body?.force === true });
+        // status 里的「Qoder 当前登录」缓存 1 分钟：不放掉的话切完后面板仍把旧账号当当前账号
+        // （新当前账号不亮角标、切换键显隐全错，用户看到的就是「切完切换键没了」）
+        qoderCurCache = { at: 0, data: null };
+        if (r.file && r.file !== target.meta?.qoderAuthFile) {
+          // 快照路径已失效、实际写进了本机新的数据目录：账号上的路径一并改成生效的那个
+          await withAccounts((list) => {
+            const cur = list.find((a) => a.id === target.id);
+            if (cur) cur.meta = { ...(cur.meta || {}), qoderAuthFile: r.file };
+          }).catch((e) => logger.warn('DAEMON', '更新 Qoder 快照路径失败:{err}', { err: e.message }));
+        }
         logger.info('DAEMON', r.alreadyActive ? 'Qoder 当前已是 {name}' : 'Qoder 已切换到 {name}(重新打开 Qoder 生效)', { name: target.name || target.id });
         return json(res, 200, { ok: true, closedClient, ...r });
       } catch (e) {
@@ -1681,7 +1711,9 @@ async function handleApi(req, res, url) {
       umid: umidInfo(),
       platform: process.platform,
       workbuddyCurrentUid: currentWorkbuddyUid(),
-      qoderCurrent: qoder.uids,
+      qoderCurrent: qoderCurrentIds(accounts, qoder),
+      qoderCurrentToken: qoder.tokens,
+      qoderCurrentUid: qoder.uids,
       qoderClient: { installed: qoder.apps.some((x) => x.installed), signedIn: qoder.apps.some((x) => x.signedIn), running: qoderRunning() },
       zcodeCurrentUid: currentZcodeUid(),
       zcodeCurrentIdentity: currentZcodeIdentity(),
