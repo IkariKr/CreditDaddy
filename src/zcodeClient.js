@@ -502,6 +502,8 @@ export function normalizeBalance(balanceResp) {
         const pending = Boolean(startsAt && new Date(startsAt).getTime() > now);
         return {
           name: e.show_name || e.entitlement_id || '活动额度',
+          // 活动名（如「ZCode 1024 Dev Day」）：未生效权益靠它告诉用户「这是哪个活动发的」
+          planName: String(p.name || p.plan_id || '') || null,
           unit: 'Token',
           total: grant,
           used: 0,
@@ -514,6 +516,10 @@ export function normalizeBalance(balanceResp) {
       }),
   );
   const parts = balanceParts.length ? balanceParts : entitlementParts;
+  // 未生效权益汇总：面板用它显示「待生效 N Token · 活动名 · HH:MM 到账」，
+  // 而不是把 0 当成「已用完」——活动权益通常要到生效点才进 balances
+  const pendingParts = parts.filter((p) => p.pending);
+  const pendingAt = pendingParts.map((p) => p.startsAt).filter(Boolean).sort()[0] || null;
   // 套餐有效期卡片上显示在「有效期至」列之外，这里记录最近的套餐结束时间
   const planEndsAt = plans.map((p) => epochMs(p.ends_at)).filter(Boolean).sort()[0] || null;
   const sum = (k) => parts.reduce((s, p) => s + (p[k] || 0), 0);
@@ -523,6 +529,8 @@ export function normalizeBalance(balanceResp) {
     plan: plans[0]?.name || plans[0]?.plan_id || null,
     planEndsAt,
     parts,
+    pendingTotal: pendingParts.reduce((s, p) => s + (p.total || 0), 0),
+    pendingAt,
     empty: parts.length === 0 && plans.length === 0,
     exceeded: false,
   };

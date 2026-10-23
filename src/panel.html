@@ -224,6 +224,8 @@
   .credit { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
   .credit b { font-weight: 700; }
   .credit svg { width: 13px; height: 13px; color: rgb(var(--accent-rgb)); }
+  .credit.pending b { color: var(--text-3); }
+  .seg.pending-ghost { background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--text-3) 30%, transparent) 0 6px, transparent 6px 10px); }
   .dim { color: var(--text-3); }
   .claim-plan { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--border); }
   .claim-plan:last-of-type { border-bottom: 0; }
@@ -1609,15 +1611,32 @@ function creditHtml(a) {
 
   const unit = q.unit ? ' ' + T(q.unit) : '';
   if (q.unit) {
+    // 待生效权益单独计数：活动发的额度要到生效点才进余额，把它算成「已用完」会让人以为丢了
+    const pendingParts = q.parts.filter((x) => x.pending);
+    const effParts = q.parts.filter((x) => !x.pending);
     const items = q.parts.map((x) => {
       const base = esc(T(x.name)) + ' ' + fmtNum(x.remaining) + '/' + fmtNum(x.total) + (x.unit ? ' ' + esc(T(x.unit)) : '');
       if (x.pending && x.startsAt) return base + T('（') + fmtTime(x.startsAt).slice(5, 16) + T(' 生效）');
       return base + (x.expiresAt ? T('（') + fmtTime(x.expiresAt).slice(5, 16) + (x.recurring ? T(' 重置）') : T(' 到期）')) : '');
     }).join(' · ');
+    const atText = q.pendingAt ? fmtTime(q.pendingAt) : '';
+    const isToday = atText.slice(0, 10) === fmtTime(new Date().toISOString()).slice(0, 10);
+    const when = atText ? (isToday ? atText.slice(11) : atText.slice(0, 10) + ' ' + atText.slice(11)) : '';
+    const pendingTotal = q.pendingTotal || pendingParts.reduce((s, x) => s + (x.total || 0), 0);
+    const pendingLine = '<div class="credit-line"><span class="credit pending">' + T('<span class="lbl">待生效</span>')
+      + '<b>' + fmtNum(pendingTotal) + '</b>' + esc(unit)
+      + '</span><span class="credit dim" title="' + items + '">'
+      + (q.plan ? esc(q.plan) + ' · ' : '') + (when ? when + ' ' + T('到账') : T('即将到账')) + '</span></div>';
     const pct = q.total > 0 ? Math.min(1, q.remaining / q.total) : 0;
+    const mainLine = () => T('<div class="credit-line"><span class="credit"><span class="lbl">剩余</span><b>') + fmtNum(q.remaining) + '</b>' + esc(unit) + '</span>'
+      + '<span class="credit dim" title="' + items + '">' + (q.plan ? esc(q.plan) + ' · ' : '') + items + '</span></div>';
+    // 全部待生效（活动刚发、还没到点）：主行显示待生效，别只显示一个 0
+    if (pendingParts.length && !effParts.length) {
+      return pendingLine + '<div class="bar"><span class="seg pending-ghost" style="flex:1 1 0"></span></div>';
+    }
     // 满额（100%）不再渲染灰色「已使用」尾段——它只占 0 宽也会造成几像素的灰边
-    return T('<div class="credit-line"><span class="credit"><span class="lbl">剩余</span><b>') + fmtNum(q.remaining) + '</b>' + esc(unit) + '</span>'
-      + '<span class="credit dim" title="' + items + '">' + (q.plan ? esc(q.plan) + ' · ' : '') + items + '</span></div>'
+    return mainLine()
+      + (pendingParts.length ? pendingLine : '')
       + '<div class="bar"><span class="seg" style="flex:' + pct.toFixed(4) + ' 1 0"></span>'
       + (pct < 0.9999 ? '<span class="seg used" style="flex:' + (1 - pct).toFixed(4) + ' 1 0"></span>' : '')
       + '</div>';

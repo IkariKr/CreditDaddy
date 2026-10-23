@@ -1704,5 +1704,9 @@
   "🔧 移除": "🔧 Removed",
   "修复": "Fixed",
   "新功能": "New",
-  "移除": "Removed"
+  "移除": "Removed",
+  "到账": "arrives",
+  "即将到账": "arriving soon",
+  "更新 Qoder 快照路径失败:{err}": "Failed to update Qoder snapshot path: {err}",
+  "<span class=\"lbl\">待生效</span>": "<span class=\"lbl\">Pending</span>"
 }
