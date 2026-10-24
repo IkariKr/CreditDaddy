@@ -112,14 +112,25 @@ test('buildLongcatQuotaPayload：Balance 汇总 + 逐包 detailOnly + giftPack �
   const bal = payload.quotas.Balance;
   assert.equal(bal.isCreditBalance, true);
   assert.equal(bal.summarizesDetail, true);
-  // 353.28万 + 1000万
-  assert.equal(bal.total, 13532800);
+  // 字段即真相（issue #37）：Balance total = Σ包总量（非剩余和），used = Σ已消耗
+  assert.equal(bal.total, 15000000);
+  assert.equal(bal.used, 1467200);
+  assert.equal(bal.remainingPercentage, 90.2);   // 13532800 / 15000000
   const pack1 = payload.quotas.Pack1;
   assert.equal(pack1.detailOnly, true);
   assert.equal(pack1.giftPack, true);
+  assert.equal(pack1.used, 1467200);
+  assert.equal(pack1.total, 5000000);
+  assert.equal(pack1.remainingPercentage, 70.7); // 3532800 / 5000000
+  assert.equal(pack1.name, '获赠资源包');          // 纯文案——数字不再拼进 name
+  assert.ok(!/\d \/ \d|%/.test(pack1.name));
   assert.equal(pack1.resetAt, new Date(Date.UTC(2026, 9, 24, 16)).toISOString());
   const pack2 = payload.quotas.Pack2;
   assert.equal(pack2.giftPack, undefined);
+  assert.equal(pack2.used, 0);
+  assert.equal(pack2.total, 10000000);
+  assert.equal(pack2.remainingPercentage, 100);
+  assert.equal(pack2.name, '资源包');
   // 10R quota key 白名单字符纪律（CJK 放行版）
   for (const k of Object.keys(payload.quotas)) assert.match(k, /^[\p{L}\p{N}][\p{L}\p{N} ._@·（）()\-]{0,63}$/u);
 });

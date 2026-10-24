@@ -13,9 +13,12 @@
  *     → data.otherLots[]  其余可用包（同形状；expireTime "YYYY-MM-DD HH:mm:ss"）
  *   （/commercial/entitlements/token-packs/list 实测返回空分页壳，summary 已含全部字段，不采用）
  *
- * 卡面口径：Balance 汇总行 = 全部 ACTIVE 包 remaining 之和（储值口径 isCreditBalance）；
- * 逐包明细腿 = currentLot + otherLots 各一行（detailOnly，name 带面值与到期日，
- * 排序按 consumeOrder——官方「赠送先扣、近到期先扣」的消耗顺序）。
+ * 卡面口径（issue #37 定版「字段即真相」）：Balance 汇总行 = 全部 ACTIVE 包
+ * remaining 之和（isCreditBalance + summarizesDetail，used/total 推 Σ消耗/Σ总量，
+ * 10R 的池条按真实消耗画空段）；逐包明细腿 = currentLot + otherLots 各一行
+ * （detailOnly，used=consumed、total=包总量、remainingPercentage=剩余%、
+ * name 纯文案「获赠资源包/资源包」，到期日走 resetAt），排序按 consumeOrder
+ * ——官方「赠送先扣、近到期先扣」的消耗顺序。
  *
  * 安全纪律：会话 cookie 只存本机账号库（0600），推 10Router 只带 token 数字标量。
  */
@@ -160,8 +163,10 @@ export function longcatSnapshot(packs) {
 
 /**
  * 组装 LongCat 资源包的 10Router external-quota 载荷（储值卡 + 逐包明细）。
- *  - Balance 汇总行 = 全部 ACTIVE 包 remaining 之和（isCreditBalance + summarizesDetail）；
- *  - 逐包明细腿 = 每包一行（detailOnly，name =「面值 · 至 M-DD」类型徽注），0 剩余包也出行；
+ *  - Balance 汇总行 = 全部 ACTIVE 包 remaining 之和（isCreditBalance + summarizesDetail，
+ *    used/total 推 Σ消耗/Σ总量——池条据此画消耗空段）；
+ *  - 逐包明细腿 = 每包一行（detailOnly，used=consumed、total=包总量、name 纯文案），
+ *    0 剩余包也出行；
  *  - 无可用包（全部耗尽/过期）→ message 状态卡。
  * @param {object} account  meta.longcatPacks（快照）
  * @param {{ packs?: Array, error?: string, authInvalid?: boolean }} [liveData]
@@ -206,26 +211,30 @@ export function buildLongcatQuotaPayload(account, liveData = null) {
       const v = Number(n) || 0;
       return v >= 1e4 ? `${Math.round(v / 1e4 * 100) / 100} 万` : String(v);
     };
+    // 字段即真相（issue #37）：used/total/remainingPercentage 推真实数字，
+    // name 只做纯文案——10R 渲染链自会出倒计时、剩余/总量与消耗百分比，
+    // 数字拼进 name 只会让卡面同一数值印两遍、进度条与文字互相矛盾。
+    const pct1 = (rem, tot) => (tot > 0 ? Math.max(0, Math.min(100, Math.round((rem / tot) * 1000) / 10)) : 0);
+    const totalAll = active.reduce((s, p) => s + Math.max(0, Number(p.total) || 0), 0);
+    const usedAll = active.reduce((s, p) => s + Math.max(0, Number(p.consumed) || 0), 0);
     payload.quotas = {
       Balance: {
         name: `${t('剩余')} ${f(balance)} (${t('Token')})`,
-        used: 0,
-        total: Math.max(0.000001, balance),
-        remainingPercentage: 100,
+        used: usedAll,
+        total: totalAll,
+        remainingPercentage: pct1(balance, totalAll),
         displayRemaining: true,
         isCreditBalance: true,
         summarizesDetail: true,
       },
     };
     for (const [i, p] of active.entries()) {
-      const usedPct = p.total > 0 ? Math.round((p.consumed / p.total) * 100) : 0;
-      const exp = p.expireAt ? ` · ${t('至')} ${String(p.expireAt).slice(5, 10)}` : '';
-      const kind = p.grantCategory === 'GIFT' || p.source === 'FREE_PACK' ? t('赠送') : '';
+      const kind = p.grantCategory === 'GIFT' || p.source === 'FREE_PACK';
       payload.quotas[`Pack${i + 1}`] = {
-        name: `${f(p.remaining)} / ${f(p.total)}${kind ? ' · ' + kind : ''}${exp} · ${usedPct}%${t('已消耗')}`,
-        used: 0,
-        total: Math.max(0.000001, Number(p.remaining)),
-        remainingPercentage: Number(p.remaining) > 0 ? 100 : 0,
+        name: kind ? t('获赠资源包') : t('资源包'),
+        used: Math.max(0, Number(p.consumed) || 0),
+        total: Number(p.total),
+        remainingPercentage: pct1(Math.max(0, Number(p.remaining)), Number(p.total)),
         displayRemaining: true,
         isCreditBalance: true,
         ...(kind ? { giftPack: true } : {}),

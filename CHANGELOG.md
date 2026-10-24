@@ -6,6 +6,7 @@
 
 ## [Unreleased]
 
+- 【修复·issue #37】LongCat 包行数字失真：`used/total/remainingPercentage` 改推真实数字（已消耗 / 包总量 / 剩余%），真实数字不再拼进 name（此前 name 里「317.57 万 / 500 万 · 36%已消耗」与结构化字段 `used=0 / remainingPercentage=100 / total=剩余值` 自相矛盾，10R 卡面画成满格未用）；Balance 汇总行同步改推 Σ消耗 / Σ总量，10R 池条按真实消耗画空段。name 退回纯文案（获赠资源包 / 资源包），到期日走 `resetAt`。
 - 【已排期·双侧】MiniMax 签到徽章 10Router 消费侧（10R#77）：external-quota 白名单放行 `checkinToday` / `streakDays` + 卡面「今日已签」徽章；CD 出口已随 1.6.0 发出。
 
 ---
