@@ -428,3 +428,87 @@ test('轮转不受账号增删影响：可用集变化后仍继续推进，不�
   await gw.handleGateway(fakeReq('POST', '{}'), r3);
   assert.equal(r3.status, 200, r3.body);
 });
+
+// ── 会话粘滞（用户选 A：同一会话的多轮固定用同一个号）──
+
+const bodyWithSession = (sid) => JSON.stringify({
+  model: 'glm-5.3-flash',
+  messages: [{ role: 'user', content: 'hi' }],
+  metadata: { user_id: JSON.stringify({ account_uuid: '', session_id: sid }) },
+});
+
+test('parseSessionMeta：三种形状都认（嵌套 JSON 串 / 裸字段 / 字符串直给）', async () => {
+  const { parseSessionMeta } = await import('../src/zcodeGateway.js');
+  assert.deepEqual(parseSessionMeta({ user_id: '{"session_id":"ses_A","account_uuid":"u1"}' }), { sessionId: 'ses_A', accountUuid: 'u1' });
+  assert.deepEqual(parseSessionMeta({ session_id: 'ses_B' }), { sessionId: 'ses_B', accountUuid: null });
+  assert.deepEqual(parseSessionMeta({ user_id: 'ses_C' }), { sessionId: 'ses_C', accountUuid: null });
+  assert.deepEqual(parseSessionMeta(null), { sessionId: null, accountUuid: null });
+  assert.deepEqual(parseSessionMeta({ user_id: 'not-json{' }), { sessionId: 'not-json{', accountUuid: null });
+});
+
+test('同一会话的多轮固定用同一个号，新会话才轮转', async () => {
+  await resetState();
+  zauto.setZcodeCaptchaProvider(null);
+  await seedAccount('a1', '账号一');
+  await seedAccount('a2', '账号二');
+  await seedAccount('a3', '账号三');
+  for (let i = 0; i < 6; i++) upstreamQueue.push({ status: 200, sse: true, body: sseBody() });
+
+  // 会话 S1 连发三轮 —— 应始终同一个号
+  for (let i = 0; i < 3; i++) {
+    const res = captureRes();
+    await gw.handleGateway(fakeReq('POST', bodyWithSession('ses_S1')), res);
+    assert.equal(res.status, 200, res.body);
+  }
+  const s1 = completions().slice(-3).map((c) => c.headers.Authorization);
+  assert.equal(new Set(s1).size, 1, '同一会话三轮应落在同一个账号上（实际: ' + s1.join(', ') + '）');
+
+  // 新会话 S2 —— 应换一个号（不粘 S1 的）
+  const r2 = captureRes();
+  await gw.handleGateway(fakeReq('POST', bodyWithSession('ses_S2')), r2);
+  assert.equal(r2.status, 200, r2.body);
+  assert.notEqual(completions().at(-1).headers.Authorization, s1[0], '新会话不应复用上一会话粘住的号');
+
+  // S1 再发 —— 仍粘回原来的号
+  const r3 = captureRes();
+  await gw.handleGateway(fakeReq('POST', bodyWithSession('ses_S1')), r3);
+  assert.equal(r3.status, 200, r3.body);
+  assert.equal(completions().at(-1).headers.Authorization, s1[0], 'S1 回来应仍粘在原号上');
+});
+
+test('粘住的号被拉黑后会话让位给轮转，不再死粘', async () => {
+  await resetState();
+  zauto.setZcodeCaptchaProvider(null);
+  await seedAccount('a1', '账号一');
+  await seedAccount('a2', '账号二');
+  // 第一轮：S1 粘住某个号
+  upstreamQueue.push({ status: 200, sse: true, body: sseBody() });
+  await gw.handleGateway(fakeReq('POST', bodyWithSession('ses_S1')), captureRes());
+  const pinned = completions().at(-1).headers.Authorization;
+
+  // 该号被 401 拉黑后，同一会话再来应换到另一个号
+  upstreamQueue.push({ status: 401, body: '{"code":401,"msg":"令牌已过期"}' }, { status: 200, sse: true, body: sseBody() });
+  const res = captureRes();
+  await gw.handleGateway(fakeReq('POST', bodyWithSession('ses_S1')), res);
+  assert.equal(res.status, 200, res.body);
+  assert.notEqual(completions().at(-1).headers.Authorization, pinned, '号被拉黑后会话应让位');
+
+  const st = await gw.gatewayStatus();
+  assert.equal(st.stickySessions, 1, '让位后新号仍粘住该会话');
+});
+
+test('无会话标识（调用方没传 metadata）时纯轮转，不产生粘滞', async () => {
+  await resetState();
+  zauto.setZcodeCaptchaProvider(null);
+  await seedAccount('a1', '账号一');
+  await seedAccount('a2', '账号二');
+  for (let i = 0; i < 4; i++) upstreamQueue.push({ status: 200, sse: true, body: sseBody() });
+  for (let i = 0; i < 4; i++) {
+    const res = captureRes();
+    await gw.handleGateway(fakeReq('POST', '{"model":"glm-5.3-flash","messages":[]}'), res);
+    assert.equal(res.status, 200, res.body);
+  }
+  const used = completions().map((c) => c.headers.Authorization);
+  assert.equal(new Set(used).size, 2, '无会话标识时应纯轮转（实际: ' + used.join(', ') + '）');
+  assert.equal((await gw.gatewayStatus()).stickySessions, 0, '无会话标识不应产生粘滞');
+});

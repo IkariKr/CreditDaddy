@@ -75,6 +75,9 @@ export async function setGatewayEnabled(v) {
 let rrIndex = 0;
 const cooling = new Map();  // accountId → 冷却截止(ms)
 const dead = new Map();     // accountId → 拉黑时的凭据指纹（指纹变化 = 已重新登录导入，自动复活）
+// 会话粘滞（用户选 A）：sessionId → { accountId, at }。同一段对话的多轮固定用同一个号，
+// TTL 到期让位给轮转，避免冷会话长期占号。声明放这里是因为 __resetForTests 要清它。
+const sessionSticky = new Map();
 
 function markCooling(id, ms = ACCOUNT_COOLING_MS) { cooling.set(id, Date.now() + ms); }
 
@@ -84,6 +87,7 @@ export function __resetForTests() {
   cooling.clear();
   dead.clear();
   quotaCache.clear();
+  sessionSticky.clear();
   marksHydrated = false;
   captchaCache = null;
   stats.lastCallAt = null;
@@ -114,8 +118,11 @@ function isDead(account) {
   return false;
 }
 
-/** 可参与轮换的账号（有可解析 plan JWT、未冷却/未拉黑），队首 = 本次主用号 */
-async function rotationQueue() {
+/**
+ * 可参与轮换的账号（有可解析 plan JWT、未冷却/未拉黑），队首 = 本次主用号。
+ * @param {string|null} sessionId 调用方带来的会话标识；命中粘滞时该号优先
+ */
+async function rotationQueue(sessionId = null) {
   const all = (await loadAccounts()).filter((a) => a.provider === 'zcode');
   await hydrateMarks();
   const now = Date.now();
@@ -127,6 +134,16 @@ async function rotationQueue() {
     try { claimToken(a); ready.push(a); } catch { /* 快照里没有 plan JWT，跳过 */ }
   }
   if (!ready.length) return [];
+
+  // 会话粘滞优先：同一段对话的多轮固定用同一个号（用户选 A）。
+  // 粘住的号必须仍在可用集里——被拉黑/冷却/打标后粘滞自动让位给轮转。
+  if (sessionId) {
+    const pinned = stickyFor(sessionId);
+    if (pinned) {
+      const hit = ready.find((a) => a.id === pinned);
+      if (hit) return [hit, ...ready.filter((a) => a.id !== pinned)];
+    }
+  }
 
   // 轮转：每个请求换一个队首，让多任务分摊到各账号（rrIndex 是「下一轮的起点」，
   // 每轮自增 1）。老实现只把 rrIndex 归一化到 ready.length 内、从不自增，
@@ -300,6 +317,57 @@ const isExhausted = (status, text) =>
 
 // 上游成功也会带 code（0 / 200），别把它们当业务错误——与 zcodeClient.businessOk 同一口径
 const BUSINESS_OK = new Set([0, 200]);
+
+/**
+ * 从调用方 body 的 metadata 里取会话标识。宽容解析三种形状：
+ *   {"user_id": "{\"session_id\":\"ses_x\",\"account_uuid\":\"...\"}"}   （上游同形，最常见）
+ *   {"session_id": "ses_x"}                                             （裸字段）
+ *   {"user_id": "ses_x"}                                                （字符串直给）
+ * @returns {{sessionId: string|null, accountUuid: string|null}}
+ */
+export function parseSessionMeta(metadata) {
+  const out = { sessionId: null, accountUuid: null };
+  if (!metadata || typeof metadata !== 'object') return out;
+  // 顶层直给的会话字段也算（调用方可能直接放 metadata.session_id）
+  out.sessionId = String(metadata.session_id || metadata.conversation_id || metadata.chat_id || '').slice(0, 64) || null;
+  const uid = metadata.user_id ?? metadata.userId ?? metadata.user;
+  let obj = null;
+  if (typeof uid === 'object') obj = uid;
+  else if (typeof uid === 'string') {
+    const s = uid.trim();
+    if (!s) return out;
+    if (s.startsWith('{')) {
+      try { obj = JSON.parse(s); } catch { out.sessionId = s.slice(0, 64); return out; }
+    } else out.sessionId = s.slice(0, 64);
+  }
+  if (obj && typeof obj === 'object') {
+    out.sessionId = String(obj.session_id || obj.sessionId || obj.conversation_id || obj.chat_id || out.sessionId || '').slice(0, 64) || out.sessionId;
+    out.accountUuid = String(obj.account_uuid || obj.accountUuid || '').slice(0, 64) || null;
+  }
+  return out;
+}
+
+// ── 会话粘滞：同一会话的多轮对话固定用同一个号 ──
+// 用户选 A：同一段对话不跳号（跳号会让上下文承接出现割裂），新会话才轮转。
+// 只粘「活着的」会话：TTL 到期即让位给轮转，避免某个冷会话长期占着一个号不放。
+const SESSION_STICKY_TTL_MS = 30 * 60_000;
+
+/** 取会话当前粘住的号（过期即失效） */
+function stickyFor(sessionId) {
+  const e = sessionSticky.get(sessionId);
+  if (!e) return null;
+  if (Date.now() - e.at >= SESSION_STICKY_TTL_MS) {
+    sessionSticky.delete(sessionId);
+    return null;
+  }
+  return e.accountId;
+}
+
+/** 会话粘住的号仍可用才粘；否则落到轮转队首，由调用方重新绑定 */
+function touchSticky(sessionId, accountId) {
+  if (!sessionId) return;
+  sessionSticky.set(sessionId, { accountId, at: Date.now() });
+}
 /** 从上游 JSON 信封里取业务码；字符串数字（"3007"）也认，取不到返回 null */
 function businessCode(v) {
   if (!v || typeof v !== 'object' || v.code === undefined || v.code === null) return null;
@@ -312,6 +380,7 @@ function buildPlanRequest(rawBody, { token, userId }) {
   let bodyObj;
   try { bodyObj = JSON.parse(rawBody); } catch { bodyObj = null; }
   if (!bodyObj || typeof bodyObj !== 'object') bodyObj = { model: 'glm-5.3-flash', messages: [] };
+  const rawMeta = parseSessionMeta(bodyObj.metadata);
   // 客户端形状：system = ZCode 系统提示词数组；首条 user 消息前插 currentDate 提醒块；
   // metadata.user_id = 会话形状字符串
   if (PLAN_SHAPE) {
@@ -332,7 +401,15 @@ function buildPlanRequest(rawBody, { token, userId }) {
       }
       bodyObj.messages = msgs;
     }
-    bodyObj.metadata = { user_id: JSON.stringify({ account_uuid: '', session_id: 'ses_' + crypto.randomUUID().slice(0, 16) }) };
+    // 会话标识：调用方传了就原样透传（会话粘滞的锚点），没传才随机生成。
+    // 注意上游只认这一个字段——网关此前每次都 new 一个新 session_id，
+    // 于是上游眼里每请求都是新会话，同一段对话的上下文连续性也丢了。
+    bodyObj.metadata = {
+      user_id: JSON.stringify({
+        account_uuid: rawMeta?.accountUuid || '',
+        session_id: rawMeta?.sessionId || 'ses_' + crypto.randomUUID().slice(0, 16),
+      }),
+    };
   }
   const headers = {
     'Content-Type': 'application/json',
@@ -427,7 +504,15 @@ export async function handleGateway(req, res) {
     return res.end(JSON.stringify({ error: e.message }));
   }
 
-  const queue = await rotationQueue();
+  // 会话标识在 body 里（不在头里）：客户端/10Router 若传了 metadata.user_id
+  // 就作为粘滞锚点；没传则 sessionId 为 null，纯轮转。
+  let sessionId = null;
+  try {
+    const parsed = JSON.parse(rawBody);
+    sessionId = parseSessionMeta(parsed?.metadata)?.sessionId;
+  } catch { /* 非 JSON 体走轮转 */ }
+
+  const queue = await rotationQueue(sessionId);
   if (!queue.length) {
     res.writeHead(503, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: await unavailableReason() }));
@@ -531,6 +616,7 @@ export async function handleGateway(req, res) {
         logger.debug('ZCODE-GW', '{label} 补全成功 ({status})', { label, status: upstream.status });
         stats.lastAccount = label;
         cooling.delete(account.id);
+        touchSticky(sessionId, account.id);   // 会话粘住这个号，后续轮不再跳
         res.writeHead(upstream.status, { 'Content-Type': ct || 'application/json', 'Cache-Control': 'no-cache' });
         res.end(text);
         return true;
@@ -538,6 +624,7 @@ export async function handleGateway(req, res) {
       logger.debug('ZCODE-GW', '{label} 补全成功 ({status})', { label, status: upstream.status });
       stats.lastAccount = label;
       cooling.delete(account.id);
+      touchSticky(sessionId, account.id);   // 会话粘住这个号，后续轮不再跳
       // 注意：undici 已自动解压上游 gzip——body 是明文，绝不能再带 content-encoding 头
       // （带着会让客户端对明文做 gunzip → 乱码）
       const out = {
@@ -633,6 +720,8 @@ export async function gatewayStatus() {
       .map((a) => ({ id: a.id, name: a.name || a.uid || a.id, remaining: quotaCache.get(a.id)?.remaining ?? 0 })),
     accounts: all.length,
     accountsWithJwt: withJwt,
+    // 会话粘滞：当前有多少段会话各自钉在一个号上（面板「接口使用中」徽标据此说明）
+    stickySessions: sessionSticky.size,
     cooling: all.filter((a) => !isDead(a) && (cooling.get(a.id) || 0) > now).map((a) => a.name || a.uid || a.id),
     dead: all.filter((a) => isDead(a)).map((a) => a.name || a.uid || a.id),
     endpoint: '/gateway/zcode/v1/messages',
