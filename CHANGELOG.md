@@ -6,8 +6,31 @@
 
 ## [Unreleased]
 
-- 【修复·issue #37】LongCat 包行数字失真：`used/total/remainingPercentage` 改推真实数字（已消耗 / 包总量 / 剩余%），真实数字不再拼进 name（此前 name 里「317.57 万 / 500 万 · 36%已消耗」与结构化字段 `used=0 / remainingPercentage=100 / total=剩余值` 自相矛盾，10R 卡面画成满格未用）；Balance 汇总行同步改推 Σ消耗 / Σ总量，10R 池条按真实消耗画空段。name 退回纯文案（获赠资源包 / 资源包），到期日走 `resetAt`。
 - 【已排期·双侧】MiniMax 签到徽章 10Router 消费侧（10R#77）：external-quota 白名单放行 `checkinToday` / `streakDays` + 卡面「今日已签」徽章；CD 出口已随 1.6.0 发出。
+
+---
+
+## [1.6.2] (2026-10-26)
+
+本版主题:**ZCode 体验包网关分流收口（轮转修复 + 会话粘滞）+ LongCat 包行数字失真修复 + 领取到账时间可见**。
+Theme: ZCode pack gateway dispatch hardening (rotation fix + session stickiness) + LongCat pack-row number fix + claim arrival time surfaced.
+
+### 🔧 修复
+
+- **ZCode 体验包网关「多账号轮换」实际没在转——所有请求都堆在第一个号上**：`rotationQueue()` 只把轮转指针 `rrIndex` 归一化到可用账号数范围内，**从不自增**，于是队首恒为账号库里的第一个账号，`handleGateway` 每轮都从它起用；其余账号只在它失败 / 冷却 / 被拉黑时才挨到。现每轮推进一格，请求分摊到各账号；可用集变化时起点取模归位，不越界卡死。同仓 MiniMax 网关用「粘性主力 + 权重排序」能分流，ZCode 这条连指针都没转起来，是它独有的实现缺陷。
+- **LongCat 资源包行数字失真（issue #37）**：推给 10Router 的包行把真实数字拼进了 `name` 文本（「317.57 万 / 500 万 · 36%已消耗」），结构化字段却推 `used=0 / total=剩余值 / remainingPercentage=100`——10R 渲染链只认结构化字段，卡面画成满格未用，与 name 文本自相矛盾。现改为**字段即真相**：`used`=已消耗、`total`=包总量、`remainingPercentage`=剩余%，`name` 退回纯文案（获赠资源包 / 资源包），到期日走 `resetAt`；Balance 汇总行同步改推 Σ消耗 / Σ总量，10R 池条据此画出消耗空段（此前 Balance 推剩余值当总量，池条恒满）。
+- **ZCode 领取成功但活动未到账时，消息带「HH:MM 到账」**：`claimPlan()` 早就返回了 `startsAt`，但 `zcodeAutoClaim` 拿到后完全没用，`claims` 只记 `plan/via/ok`——到账时间就这么丢了。现场：自动领到「ZCODE GLOBAL BUILD」3 亿 Token，日志明确「已领取（免验证码）」，面板却只显示「待生效 3 亿 · 23:00 到账」，用户无法区分「没领上」还是「要等」。现两条领取路径（免验证码 / 静默验证码）都带出 `startsAt`，仅当到账时间在未来才追加「（HH:MM 到账）」（同日只出时分、跨天出 `M-DD HH:MM`），已生效的不加后缀。
+
+### ✨ 新功能
+
+- **ZCode 体验包网关会话粘滞**：同一会话的多轮对话固定用同一个账号，新会话才轮转（跳号会让上下文承接出现割裂）。会话标识取自调用方 body 的 `metadata.user_id`（宽容解析嵌套 JSON 串 / 顶层 `session_id` / 字符串直给三种形状）；同时 `metadata.user_id` 改为**调用方传了就原样透传、没传才随机生成**——此前每次请求都新生成一个 `session_id`，上游眼里每请求都是新会话，会话连续性本身就是断的。粘滞 TTL 30 分钟，到期让位给轮转；粘住的号被拉黑 / 冷却 / 打标时自动让位，不死粘。调用方没传 `metadata` 时退化为纯轮转（行为安全）。
+- 面板「接口使用中」徽标在多账号时注明轮转分摊（n 个 ZCode 账号、每请求换一个），避免以为只有一个号在服役；`gatewayStatus` 新增 `stickySessions`。
+
+### 🌐 其它
+
+- 测试补强：网关轮转 / 会话粘滞各 2–4 条（均验证过「摘掉修复即转红」），logger 归档等待条件从「文件存在」改为「文件有字节」（修 CI 在 Windows / Node 24 上的偶发竞态红——`createWriteStream` 一 new 出来文件就存在，但 `write()` 落盘是异步的）。
+- 补 i18n 词条（ZCode 徽标轮转说明）四语同步；`scripts/check-i18n.js` 全量覆盖通过。
+
 
 ---
 
