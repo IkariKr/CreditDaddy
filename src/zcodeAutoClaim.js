@@ -67,7 +67,10 @@ export async function zcodeAutoClaim(account) {
     // 第 2 步：先试不带验证码
     try {
       const r = await claimPlan(account, plan.planId, {});
-      claims.push({ plan: planName, via: 'direct', ok: true });
+      // startsAt 是「到账时间」：活动权益常带 effective_at（如当天 23:00），
+      // 领到了但余额里还没有——不把这个时间带出去，面板只能显示冷冰冰的
+      // 「待生效」，用户以为没领上。
+      claims.push({ plan: planName, via: 'direct', ok: true, startsAt: r?.startsAt || null });
       anySuccess = true;
             logger.info('ZCODE-CLAIM', '{label} 已领取「{plan}」(免验证码){grants}', { label, plan: planName, grants: grantsText(plan) ? ':' + grantsText(plan) : '' });
       continue;
@@ -97,8 +100,8 @@ export async function zcodeAutoClaim(account) {
       const cfg = await fetchCaptchaConfig();
       if (!cfg.enabled || !cfg.sceneId) throw new Error('验证码配置不可用');
       const { captchaParam, region } = await captchaProvider(cfg);
-      await claimPlan(account, plan.planId, { captchaParam, region });
-      claims.push({ plan: planName, via: 'captcha', ok: true });
+      const r2 = await claimPlan(account, plan.planId, { captchaParam, region });
+      claims.push({ plan: planName, via: 'captcha', ok: true, startsAt: r2?.startsAt || null });
       anySuccess = true;
             logger.info('ZCODE-CLAIM', '{label} 已领取「{plan}」(静默验证码){grants}', { label, plan: planName, grants: grantsText(plan) ? ':' + grantsText(plan) : '' });
     } catch (e2) {
@@ -128,8 +131,22 @@ export async function zcodeAutoClaim(account) {
   const status = names.length ? 'checked-in'
     : claims.every((c) => c.already) ? 'already'
     : 'failed';
+  // 到账时间：新领的活动若带 effective_at（当天稍晚才进余额），把时间写进消息——
+  // 否则面板只显示「待生效」，用户无法判断是没领上还是要等。
+  const fmtAt = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const p2 = (n) => String(n).padStart(2, '0');
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const hm = `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    return sameDay ? hm : `${d.getMonth() + 1}-${p2(d.getDate())} ${hm}`;
+  };
+  const starts = claims.filter((c) => c.ok && c.startsAt && new Date(c.startsAt).getTime() > Date.now());
+  const startsText = starts.length ? `（${fmtAt(starts[0].startsAt)} 到账）` : '';
   const message = status === 'checked-in'
-    ? `已领取：${names.join('、')}${claims.some((c) => c.via === 'captcha') ? '（静默验证码）' : ''}`
+    ? `已领取：${names.join('、')}${claims.some((c) => c.via === 'captcha') ? '（静默验证码）' : ''}${startsText}`
     : status === 'already' ? '活动均已领取过'
     : needManual ? `有 ${claims.filter((c) => c.needManual).length} 个活动需要验证码，请在面板手动领取`
     : `领取失败：${claims.filter((c) => !c.ok).map((c) => c.message).filter(Boolean)[0] || '未知错误'}`;

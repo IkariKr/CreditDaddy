@@ -113,3 +113,28 @@ test('验证码提供者失败 → 标记需手动', async () => {
     assert.match(r.message, /手动领取/);
   } finally { globalThis.fetch = realFetch; }
 });
+
+test('领取成功且活动当天稍晚到账：消息带「HH:MM 到账」', async () => {
+  mockFetch();
+  // 服务端返回 starts_at（秒级时间戳）= 今天 23:00
+  const at = new Date();
+  at.setHours(23, 0, 0, 0);
+  if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);   // 已过 23 点则推到明天
+  claimBehaviors = [{ code: 0, data: { plan: { name: 'ZCODE GLOBAL BUILD', starts_at: Math.floor(at.getTime() / 1000) } } }];
+  try {
+    const r = await zcodeAutoClaim(account);
+    assert.equal(r.status, 'checked-in');
+    assert.match(r.message, /到账/, '领取成功但尚未到账时，消息应说明到账时间');
+    assert.equal(r.claims[0].startsAt, at.toISOString());
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('领取成功且立即生效：消息不带到账后缀', async () => {
+  mockFetch();
+  claimBehaviors = [{ code: 0, data: { plan: { name: '即效活动', starts_at: Math.floor(Date.now() / 1000) - 60 } } }];
+  try {
+    const r = await zcodeAutoClaim(account);
+    assert.equal(r.status, 'checked-in');
+    assert.doesNotMatch(r.message, /到账/, '已生效的活动不该再提示到账时间');
+  } finally { globalThis.fetch = realFetch; }
+});
