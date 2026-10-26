@@ -26,15 +26,19 @@ const today = () => {
 const jf = () => path.join(HOME, 'logs', `daemon-${today()}.jsonl`);
 const lf = () => path.join(HOME, 'logs', `daemon-${today()}.log`);
 
-// 写流是异步创建与落盘的,固定 sleep 在 Windows(杀软即时扫描、负载高)上偶发不够——
-// 改成轮询到出现为止(上限 3s,真实回归会在上限内自然失败)
+// 写流是异步创建与落盘的,固定 sleep 在 Windows(杀软即时扫描、负载高)上偶发不够。
+// 注意 createWriteStream 一 new 出来文件就存在了,但 write() 落盘还要一会儿——
+// 只等「存在」会在文件已建、内容未落时被读成空串(CI windows/Node24 实测偶发红)。
+// 所以等的是「文件存在且有字节」(上限 3s,真实回归会在上限内自然失败)。
 async function waitForFile(p, ms = 3000) {
   const dl = Date.now() + ms;
   while (Date.now() < dl) {
-    if (fs.existsSync(p)) return true;
+    try {
+      if (fs.statSync(p).size > 0) return true;
+    } catch { /* 还没建出来 */ }
     await new Promise((r) => setTimeout(r, 60));
   }
-  return fs.existsSync(p);
+  try { return fs.statSync(p).size > 0; } catch { return false; }
 }
 
 test('写入：log 与 jsonl 双写，jsonl 保留 key+args', async () => {
