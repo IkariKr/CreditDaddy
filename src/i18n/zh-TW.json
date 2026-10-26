@@ -1716,5 +1716,7 @@
   "账号同步与网页会话 Cookie 捕获": "賬號同步與網頁會話 Cookie 捕獲",
   "把本机 Qoder / WorkBuddy 账号推为 10Router 上游连接。": "把本機 Qoder / WorkBuddy 賬號推為 10Router 上游連接。",
   "填 10Router 面板密码，走 OAuth 通道（带 refreshToken 自动续期）；不填则按已保存的走": "填 10Router 面板密碼，走 OAuth 通道（帶 refreshToken 自動續期）；不填則按已保存的走",
-  "同步账号中…": "同步賬號中…"
+  "同步账号中…": "同步賬號中…",
+  "<span class=\"pill gw\" title=\"体验包接口最近一次补全用的账号（{n} 个 ZCode 账号按轮转分摊请求，每个请求换一个，与客户端登录无关）\">接口使用中</span>": "<span class=\"pill gw\" title=\"體驗包介面最近一次補全用的帳號（{n} 個 ZCode 帳號按輪轉分攤請求，每個請求換一個，與客戶端登入無關）\">介面使用中</span>",
+  "<span class=\"pill gw\" title=\"体验包接口最近一次补全用的账号（多账号时按轮转自动选择，与客户端登录无关）\">接口使用中</span>": "<span class=\"pill gw\" title=\"體驗包介面最近一次補全用的帳號（多帳號時按輪轉自動選擇，與客戶端登入無關）\">介面使用中</span>"
 }

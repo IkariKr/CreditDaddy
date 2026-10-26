@@ -1675,7 +1675,9 @@ function cardHtml(a) {
     + T('<span class="name" data-act="rename" title="点击修改备注名">') + esc(a.name || T('(未命名)')) + '</span>'
     + provBadges(a.provider, true, a.flavor)
     + (isCurrent ? '<span class="pill cur" title="' + esc(CLIENT_LABEL[a.product] ? T(CLIENT_LABEL[a.product]) : '') + T(' 客户端当前登录的账号">客户端当前</span>') : '')
-    + (a.product === 'zcode' && isGatewayCurrent(a) ? T('<span class="pill gw" title="体验包接口最近一次补全用的账号（多账号时按轮换自动选择，与客户端登录无关）">接口使用中</span>') : '')
+    + (a.product === 'zcode' && isGatewayCurrent(a) ? (zgwAccountCount() > 1
+      ? T('<span class="pill gw" title="体验包接口最近一次补全用的账号（{n} 个 ZCode 账号按轮转分摊请求，每个请求换一个，与客户端登录无关）">接口使用中</span>', { n: zgwAccountCount() })
+      : T('<span class="pill gw" title="体验包接口最近一次补全用的账号（多账号时按轮转自动选择，与客户端登录无关）">接口使用中</span>')) : '')
     + (a.product === 'minimax' && isMiniMaxGatewayCurrent(a) ? T('<span class="pill gw" title="本地接口最近一次补全用的账号（多账号时按轮换自动选择，与客户端登录无关）">接口使用中</span>') : '')
     + (a.product === 'trae' && isTraeGatewayCurrent(a) ? T('<span class="pill gw" title="本地接口最近一次补全用的账号（多账号时按轮换自动选择，与客户端登录无关）">接口使用中</span>') : '')
     + (a.isPat ? '<span class="badge">PAT</span>' : '')
@@ -1715,6 +1717,10 @@ const currentUidOf = (prod) => state.status && (prod === 'workbuddy' ? state.sta
 function isGatewayCurrent(a) {
   const last = state.zGatewayStats && state.zGatewayStats.lastAccount;
   return Boolean(last) && (a.name === last || a.uid === last || a.id === last);
+}
+/** 网关账号总数（多账号时徽标注明「轮转中」，避免用户以为只有一个号在服役） */
+function zgwAccountCount() {
+  return state.accounts.filter((a) => a.product === 'zcode').length;
 }
 /** MiniMax 本地接口使用中判定 */
 function isMiniMaxGatewayCurrent(a) {

@@ -1716,5 +1716,7 @@
   "账号同步与网页会话 Cookie 捕获": "계정 동기화 및 웹 세션 쿠키 캡처",
   "把本机 Qoder / WorkBuddy 账号推为 10Router 上游连接。": "로컬 Qoder / WorkBuddy 계정을 10Router 업스트림 연결로 등록합니다.",
   "填 10Router 面板密码，走 OAuth 通道（带 refreshToken 自动续期）；不填则按已保存的走": "10Router 관리자 비밀번호를 입력하면 OAuth 경로(refreshToken 자동 갱신)를 사용합니다. 비우면 저장된 값을 사용합니다",
-  "同步账号中…": "계정 동기화 중…"
+  "同步账号中…": "계정 동기화 중…",
+  "<span class=\"pill gw\" title=\"体验包接口最近一次补全用的账号（{n} 个 ZCode 账号按轮转分摊请求，每个请求换一个，与客户端登录无关）\">接口使用中</span>": "<span class=\"pill gw\" title=\"팩 API가 마지막으로 완성에 사용한 계정({n}개 ZCode 계정이 로테이션으로 요청을 분산, 요청마다 교체. 클라이언트 로그인과 무관)\">API 사용 중</span>",
+  "<span class=\"pill gw\" title=\"体验包接口最近一次补全用的账号（多账号时按轮转自动选择，与客户端登录无关）\">接口使用中</span>": "<span class=\"pill gw\" title=\"팩 API가 마지막으로 완성에 사용한 계정(다중 계정 시 로테이션으로 자동 선택. 클라이언트 로그인과 무관)\">API 사용 중</span>"
 }

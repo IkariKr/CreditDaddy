@@ -4,7 +4,8 @@
  * 数据面：POST /gateway/zcode/v1/messages（Anthropic /v1/messages 形态，10router
  * 建一个 anthropic-compatible 自定义节点指向这里即可）。
  *
- * 链路：账号轮换（store 里 provider=zcode、可解析出 zcodejwttoken 的账号）
+ * 链路：账号轮转（store 里 provider=zcode、可解析出 zcodejwttoken 的账号；
+ *   每个请求换一个队首，多任务分摊到各账号，见 rotationQueue）
  *   → 验证码（复用桌面版注册的隐藏窗口 provider，与活动领取共用同一个求解器）
  *   → POST zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages
  *   → SSE / JSON 原样流式回传。
@@ -113,7 +114,7 @@ function isDead(account) {
   return false;
 }
 
-/** 可参与轮换的账号（有可解析 plan JWT、未冷却/未拉黑），按轮转序排列 */
+/** 可参与轮换的账号（有可解析 plan JWT、未冷却/未拉黑），队首 = 本次主用号 */
 async function rotationQueue() {
   const all = (await loadAccounts()).filter((a) => a.provider === 'zcode');
   await hydrateMarks();
@@ -126,8 +127,13 @@ async function rotationQueue() {
     try { claimToken(a); ready.push(a); } catch { /* 快照里没有 plan JWT，跳过 */ }
   }
   if (!ready.length) return [];
-  rrIndex = ((rrIndex % ready.length) + ready.length) % ready.length;
-  return [...ready.slice(rrIndex), ...ready.slice(0, rrIndex)];
+
+  // 轮转：每个请求换一个队首，让多任务分摊到各账号（rrIndex 是「下一轮的起点」，
+  // 每轮自增 1）。老实现只把 rrIndex 归一化到 ready.length 内、从不自增，
+  // 于是队首恒为账号库里的第一个号——「多任务全走一个账号」就是这么来的。
+  const start = rrIndex % ready.length;
+  rrIndex += 1;
+  return [...ready.slice(start), ...ready.slice(0, start)];
 }
 
 /** 队列为空时说清原因（与 rotationQueue 同序分类）——额度耗尽不该提示「重新登录导入」 */

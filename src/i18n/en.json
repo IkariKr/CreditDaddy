@@ -1716,5 +1716,7 @@
   "账号同步与网页会话 Cookie 捕获": "Account sync and web-session cookie capture",
   "把本机 Qoder / WorkBuddy 账号推为 10Router 上游连接。": "Push local Qoder / WorkBuddy accounts to 10Router as upstream connections.",
   "填 10Router 面板密码，走 OAuth 通道（带 refreshToken 自动续期）；不填则按已保存的走": "Enter the 10Router admin password to use the OAuth channel (keeps refreshToken for auto-renewal); leave blank to use the saved one",
-  "同步账号中…": "Syncing accounts…"
+  "同步账号中…": "Syncing accounts…",
+  "<span class=\"pill gw\" title=\"体验包接口最近一次补全用的账号（{n} 个 ZCode 账号按轮转分摊请求，每个请求换一个，与客户端登录无关）\">接口使用中</span>": "<span class=\"pill gw\" title=\"Pack API last used this account ({n} ZCode accounts share requests by rotation, one per request, independent of client login)\">In use by API</span>",
+  "<span class=\"pill gw\" title=\"体验包接口最近一次补全用的账号（多账号时按轮转自动选择，与客户端登录无关）\">接口使用中</span>": "<span class=\"pill gw\" title=\"Pack API last used this account (auto-selected by rotation with multiple accounts, independent of client login)\">In use by API</span>"
 }

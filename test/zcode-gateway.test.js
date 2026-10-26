@@ -392,3 +392,39 @@ test('remoteAllowed：精确 IP、::ffff: 前缀剥离与 * 通配', async () =>
   assert.equal(remoteAllowed('192.168.31.101', []), false, '空白名单不放行');
   assert.equal(remoteHost('::ffff:192.168.31.101'), '192.168.31.101');
 });
+
+test('多账号轮转：每个请求换一个队首，不堆在同一个号上', async () => {
+  await resetState();
+  zauto.setZcodeCaptchaProvider(null);   // 纯数据面，避免验证码求解干扰
+  await seedAccount('a1', '账号一');
+  await seedAccount('a2', '账号二');
+  await seedAccount('a3', '账号三');
+  for (let i = 0; i < 3; i++) upstreamQueue.push({ status: 200, sse: true, body: sseBody() });
+  for (let i = 0; i < 3; i++) {
+    const res = captureRes();
+    await gw.handleGateway(fakeReq('POST', '{}'), res);
+    assert.equal(res.status, 200, res.body);
+  }
+  const used = completions().map((c) => c.headers.Authorization);
+  assert.equal(new Set(used).size, 3, '三次请求应分别落在三个账号上（实际: ' + used.join(', ') + '）');
+  assert.equal(used[1], 'Bearer jwt-a2-' + 'x'.repeat(200), '第二次应轮到账号二');
+  assert.equal(used[2], 'Bearer jwt-a3-' + 'x'.repeat(200), '第三次应轮到账号三');
+});
+
+test('轮转不受账号增删影响：可用集变化后仍继续推进，不回头重打', async () => {
+  await resetState();
+  zauto.setZcodeCaptchaProvider(null);
+  await seedAccount('a1', '账号一');
+  await seedAccount('a2', '账号二');
+  upstreamQueue.push({ status: 200, sse: true, body: sseBody() });
+  await gw.handleGateway(fakeReq('POST', '{}'), captureRes());
+  // 账号一被拉黑（401）→ 可用集缩到只剩 a2，此时 rrIndex 应归位而不是越界卡住
+  upstreamQueue.push({ status: 401, body: '{"code":401,"msg":"令牌已过期"}' }, { status: 200, sse: true, body: sseBody() });
+  const r2 = captureRes();
+  await gw.handleGateway(fakeReq('POST', '{}'), r2);
+  assert.equal(r2.status, 200, r2.body);
+  upstreamQueue.push({ status: 200, sse: true, body: sseBody() });
+  const r3 = captureRes();
+  await gw.handleGateway(fakeReq('POST', '{}'), r3);
+  assert.equal(r3.status, 200, r3.body);
+});
