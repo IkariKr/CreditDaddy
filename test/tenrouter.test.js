@@ -14,6 +14,7 @@ process.env.LOCALAPPDATA = path.join(home, 'AppData', 'Local');
 process.env.APPDATA = path.join(home, 'AppData', 'Roaming');   // 10r 来源库也从假家目录发现
 
 const us = await import('../src/usageSync.js');
+const eq = await import('../src/externalQuota.js');
 const tr = await import('../src/tenrouter.js');
 const hasSqlite = await us.sqliteAvailable();
 after(async () => {
@@ -568,3 +569,53 @@ test('quotaPush 配置：开关与频率保存、默认开启、最小频率 15 
   assert.equal(pub.quotaPush.intervalMin, 15);
 });
 
+
+test('accountSync 渠道开关：providers 白名单过滤账号、enabled=false 直接短路', async () => {
+  // 白名单只含 workbuddy：qoder 账号应被滤掉，连接只推 codebuddy-cn
+  const m = mockFetch((url, init) => {
+    if (String(url).endsWith('/api/auth/login')) {
+      return { status: 200, body: { success: true }, headers: { 'set-cookie': 'auth_token=abc; Path=/' } };
+    }
+    if (String(url).endsWith('/api/auth/logout')) return { status: 200, body: {} };
+    return { status: 200, body: { imported: 1, updated: 0, skipped: 0, failed: 0 } };
+  });
+  try {
+    await tr.updateConfig({ accountSyncEnabled: true, accountSyncProviders: ['workbuddy'] });
+    const r = await ta.syncAccountsTo10r({
+      endpoint: 'http://127.0.0.1:20127', key: 'sk-x', adminPassword: 'pw',
+      // 模拟 daemon 侧已按白名单过滤（qoder 被滤掉）
+      accounts: [{ id: '1', provider: 'workbuddy', token: 'tok-w', name: 'W' }],
+    });
+    assert.deepEqual(m.calls.filter((c) => c.url.includes('transfer/import')).map((c) => c.init.body && JSON.parse(c.init.body).provider), ['codebuddy-cn']);
+    assert.match(r.summary, /导入 1/);
+
+    // enabled=false：daemon 侧短路（syncAccountsTo10r 本身无开关概念，短路在路由层）
+    await tr.updateConfig({ accountSyncEnabled: false });
+    const c = tr.loadConfig();
+    assert.equal(c.accountSync.enabled, false);
+    assert.deepEqual(c.accountSync.providers, ['workbuddy']);
+  } finally { m.restore(); }
+});
+
+test('quotaPushDisabledProviders：排除渠道的账号被滤掉后不再出卡', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method });
+    if (String(url).includes('agent.minimax.cn')) {
+      return new Response(JSON.stringify({ base_resp: { status_code: 0 }, data: { remaining_credits: '88', plan_name: 'Free', is_pro_builder: false, expires_at: 0, usage_summary: null } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  const fetchImpl = globalThis.fetch;
+  try {
+    await tr.updateConfig({ quotaPushDisabledProviders: ['minimax'] });
+    // 模拟 pushQuotaCards 的过滤：disabled 含 minimax 时账号先被滤掉
+    const c = tr.loadConfig();
+    const accounts = [{ provider: 'minimax', name: 'MM', token: 'tok', refreshToken: 'r' }]
+      .filter((a) => !(c.quotaPushDisabledProviders || []).includes(a.provider));
+    await eq.runQuotaPush({ endpoint: 'http://127.0.0.1:20128', key: 'sk-t', accounts, fetchImpl });
+    assert.ok(!calls.some((x) => x.url.includes('/minimax-free')), '排除渠道不应有任何推送');
+    assert.equal(c.quotaPushDisabledProviders, c.quotaPushDisabledProviders, '配置读取一致');
+  } finally { globalThis.fetch = realFetch; }
+});

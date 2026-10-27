@@ -874,6 +874,7 @@
         <button class="btn" id="am-sync"><span class="dot"></span><span class="lbl">同步账号到 10R</span></button>
         <span class="hint" id="am-sync-msg"></span>
       </div>
+      <div style="margin-top:10px" id="am-sync-channels"></div>
     </div>
     <div class="field" style="margin-top:14px"><label data-i18n="网页会话">网页会话</label>
       <div class="hint" data-i18n="为「额度只在网页 dashboard」的供应商捕获登录会话(cookie),同步给 10Router 点亮配额卡片;凭据全程只存本机(账号库加密)。">为「额度只在网页 dashboard」的供应商捕获登录会话(cookie),同步给 10Router 点亮配额卡片;凭据全程只存本机(账号库加密)。</div>
@@ -2803,7 +2804,25 @@ function renderCookieSites() {
  *   1. 账号同步：本机 Qoder / WorkBuddy 账号推为 10Router 上游连接（原藏在「设置」弹窗底部）
  *   2. Cookie 会话：网页会话型供应商的捕获入口（原名「Cookie 会话」按钮）
  * 面板密码栏同步展示：账号同步走 OAuth 通道时要它（带 refreshToken，自动续期）。
+ *
+ * 渠道开关（每渠道一行勾选）：取消勾选 = 两边都不再推——
+ *   账号连接（sync-accounts）跳过该渠道的账号；额度卡推送跳过该渠道账号的免费卡。
+ * 场景：10Router 已单独配了同源渠道（如 minimax-code 连接），CD 侧维护同名免费卡
+ * （minimax-free-*）纯属重复——两边卡片并存且数字各刷各的。
  */
+const AM_CHANNELS = [
+  { provider: 'minimax', label: 'MiniMax', syncable: false },
+  { provider: 'tokenharbor', label: 'Token Harbor', syncable: true },
+  { provider: 'xiaomi-mimo', label: '小米 MiMo', syncable: false },
+  { provider: 'river', label: 'River AI', syncable: false },
+  { provider: 'modelscope', label: 'ModelScope 魔搭', syncable: false },
+  { provider: 'longcat', label: 'LongCat', syncable: false },
+  { provider: 'qoder', label: 'Qoder 国际版', syncable: true },
+  { provider: 'qoder-cn', label: 'Qoder 国内版', syncable: true },
+  { provider: 'workbuddy', label: 'WorkBuddy 国内版', syncable: true },
+  { provider: 'workbuddy-intl', label: 'WorkBuddy 国际版', syncable: true },
+];
+
 function openTrAccountManage() {
   if (!(tr.config && tr.config.configured)) return toast(T('请先保存 10Router 设置'), false);
   $('am-sync-msg').textContent = '';
@@ -2813,8 +2832,53 @@ function openTrAccountManage() {
   btn.disabled = false;
   btn.querySelector('.dot').className = 'dot' + (tr.config.configured ? ' on' : '');
   btn.querySelector('.lbl').textContent = T('同步账号到 10R');
+  renderAmChannels();
   loadCookieSites(true).then(() => renderCookieSites()).catch(() => {});
   openModal('m-am');
+}
+
+function renderAmChannels() {
+  const c = tr.config || {};
+  const enabled = c.accountSync?.enabled !== false;
+  const excluded = (c.quotaPushDisabledProviders || []);
+  const have = new Set((state.accounts || []).map((a) => a.provider));
+  const box = $('am-sync-channels');
+  if (!box) return;
+  const rows = AM_CHANNELS.filter((ch) => have.has(ch.provider)).map((ch) => {
+    // 勾选语义 = 推送该渠道：账号同步看 accountSync（总开关关了整组禁用），
+    // 额度卡看 quotaPushDisabledProviders 反集
+    const syncOn = enabled && ((c.accountSync?.providers || []).length
+      ? (c.accountSync.providers.includes(ch.provider)) : ch.syncable);
+    const pushOn = !excluded.includes(ch.provider);
+    return '<label class="check" style="display:flex;gap:6px;align-items:center">'
+      + '<input type="checkbox" data-am-push="' + ch.provider + '"' + (pushOn ? ' checked' : '') + '> ' + esc(T(ch.label))
+      + '<label class="check" style="margin-left:auto;gap:4px"><input type="checkbox" data-am-sync="' + ch.provider + '"' + (syncOn ? ' checked' : '') + (!ch.syncable || !enabled ? ' disabled' : '') + '> <span class="dim">连接</span></label>'
+      + '</label>';
+  });
+  box.innerHTML = rows.length
+    ? '<div class="hint" style="margin-bottom:4px">' + T('勾选 = 同步该渠道（「连接」= 账号连接；主勾 = 额度卡推送）。10Router 已单独配了同源渠道时，取消对应渠道即可去掉重复卡片。') + '</div>'
+      + '<div style="display:grid;gap:4px">' + rows.join('') + '</div>'
+      + '<div style="margin-top:6px"><button class="btn" id="am-channels-save">' + T('保存渠道设置') + '</button></div>'
+    : '';
+  $('am-channels-save')?.addEventListener('click', saveAmChannels);
+}
+
+async function saveAmChannels() {
+  const push = [...document.querySelectorAll('#am-sync-channels input[data-am-push]:checked')].map((x) => x.dataset.amPush);
+  const sync = [...document.querySelectorAll('#am-sync-channels input[data-am-sync]:checked')].map((x) => x.dataset.amSync);
+  try {
+    tr.config = await api('/api/tenrouter', {
+      method: 'PUT',
+      json: {
+        accountSyncEnabled: true,
+        accountSyncProviders: sync,
+        // 主勾没勾的 = 排除推送
+        quotaPushDisabledProviders: AM_CHANNELS.map((c) => c.provider).filter((p) => !push.includes(p)),
+      },
+    });
+    toast(T('渠道同步设置已保存'), true);
+    renderAmChannels();
+  } catch (e) { toast(e.message, false); }
 }
 async function trSyncAccountsFromModal() {
   if (!(tr.config && tr.config.configured)) return toast(T('请先保存 10Router 设置'), false);

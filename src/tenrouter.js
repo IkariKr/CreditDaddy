@@ -29,6 +29,14 @@ const DEFAULT_CONFIG = {
   syncState: {},
   lastSync: null,
   quotaPush: { enabled: true, intervalMin: 60, lastPush: null },
+  // 账号连接同步（账号管理弹窗「同步账号到 10R」）：enabled 总开关 + 渠道勾选。
+  // providers 空 = 全部候选渠道（向后兼容老配置）；渠道是 CD provider 视角
+  // （qoder / qoder-cn / workbuddy / workbuddy-intl / tokenharbor）。
+  accountSync: { enabled: true, providers: [] },
+  // 额度卡推送的渠道排除：10Router 已单独配了同源渠道（如 minimax-code 连接）时，
+  // 免去 CD 侧维护同名免费卡（minimax-free-*），两边卡片重复且数字各刷新各的。
+  // 记「明确不推」的 CD provider，空 = 全推。
+  quotaPushDisabledProviders: [],
 };
 // v1.0.0 及更早保存的来源全集；版本迁移只补「此后新增」的来源，不复活用户手动关掉的
 const LEGACY_SOURCES = ['zcode', 'opencode', 'mirasim', 'mimo', 'catpaw'];
@@ -39,6 +47,7 @@ export function loadConfig() {
     const c = JSON.parse(fs.readFileSync(FILE(), 'utf8'));
     const sync = { ...DEFAULT_CONFIG.sync, ...(c.sync || {}) };
     const quotaPush = { ...DEFAULT_CONFIG.quotaPush, ...(c.quotaPush || {}) };
+    const accountSync = { ...DEFAULT_CONFIG.accountSync, ...(c.accountSync || {}) };
     // 旧配置里的 sources 是保存时的快照，会盖掉新增来源（妙手因此被静默关掉）；
     // 只把此后新增的来源默认并入，用户手动关掉的保持关闭。
     const savedVersion = Number(c.sync?.sourcesVersion) || 1;
@@ -47,7 +56,7 @@ export function loadConfig() {
       for (const s of SOURCES) if (!LEGACY_SOURCES.includes(s) && !sync.sources.includes(s)) sync.sources.push(s);
       sync.sourcesVersion = SOURCES_VERSION;
     }
-    return { ...DEFAULT_CONFIG, ...c, sync, quotaPush, syncState: c.syncState || {} };
+    return { ...DEFAULT_CONFIG, ...c, sync, quotaPush, accountSync, syncState: c.syncState || {} };
   } catch { return structuredClone(DEFAULT_CONFIG); }
 }
 
@@ -97,6 +106,8 @@ export async function publicConfig() {
     hasAdminPassword: Boolean(c.adminPassword),
     sync: c.sync,
     quotaPush: c.quotaPush,
+    accountSync: c.accountSync,
+    quotaPushDisabledProviders: c.quotaPushDisabledProviders || [],
     lastSync: c.lastSync,
     syncing: Boolean(syncing),
     sources: await detectSources(),
@@ -104,7 +115,7 @@ export async function publicConfig() {
 }
 
 /** 更新配置：key 留空表示保持原值；endpoint 为空 = 清除整个配置 */
-export function updateConfig({ endpoint, key, adminPassword, syncEnabled, sources, quotaPushEnabled, quotaPushIntervalMin } = {}) {
+export function updateConfig({ endpoint, key, adminPassword, syncEnabled, sources, quotaPushEnabled, quotaPushIntervalMin, accountSyncEnabled, accountSyncProviders, quotaPushDisabledProviders } = {}) {
   return withConfig((c) => {
     if (endpoint !== undefined) {
       c.endpoint = normalizeEndpoint(endpoint);
@@ -127,6 +138,12 @@ export function updateConfig({ endpoint, key, adminPassword, syncEnabled, source
       const min = Math.max(15, Math.min(1440, Number(quotaPushIntervalMin) || 60));
       c.quotaPush.intervalMin = min;
     }
+    // 账号连接同步：总开关 + 渠道白名单（空数组 = 不限渠道，向后兼容）
+    c.accountSync = { ...DEFAULT_CONFIG.accountSync, ...(c.accountSync || {}) };
+    if (typeof accountSyncEnabled === 'boolean') c.accountSync.enabled = accountSyncEnabled;
+    if (Array.isArray(accountSyncProviders)) c.accountSync.providers = accountSyncProviders.map(String);
+    // 额度卡推送的渠道排除（10R 侧已有同源渠道时免去重复卡片）
+    if (Array.isArray(quotaPushDisabledProviders)) c.quotaPushDisabledProviders = quotaPushDisabledProviders.map(String);
   });
 }
 
@@ -292,7 +309,14 @@ export async function pushQuotaCards({ onlySources } = {}) {
   if (c.quotaPush?.enabled === false) return { results: [], skipped: 'disabled' };
   const { runQuotaPush } = await import('./externalQuota.js');
   const { loadAccounts } = await import('./store.js');
-  const accounts = await loadAccounts();
+  let accounts = await loadAccounts();
+  // 渠道排除：10Router 已单独配了同源渠道（如 minimax-code 连接）时，跳过对应 CD 渠道的
+  // 免费卡推送——两边卡片重复且数字各刷各的。账号从源头滤掉比在 runQuotaPush 里逐家族判
+  // 更简单：没有账号的家族自然一个卡都不出。
+  const disabled = Array.isArray(c.quotaPushDisabledProviders) ? c.quotaPushDisabledProviders : [];
+  if (disabled.length && !Array.isArray(onlySources)) {
+    accounts = accounts.filter((a) => !disabled.includes(a.provider));
+  }
   const res = await runQuotaPush({
     endpoint: c.endpoint, key: c.key, accounts,
     ...(Array.isArray(onlySources) && onlySources.length ? { onlySource: onlySources } : {}),

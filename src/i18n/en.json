@@ -1724,5 +1724,11 @@
   "<div class=\"z-row\"><span class=\"z-label\">客户端</span><span class=\"z-text\">本机未安装 WorkBuddy / CodeBuddy 客户端：Token 导入、额度读取与每日领取不受影响；但「切换账号」需要本机客户端（切换是写入客户端凭据由其应用）。请先安装并登录客户端，再「本机导入」。</span></div>": "<div class=\"z-row\"><span class=\"z-label\">Client</span><span class=\"z-text\">WorkBuddy / CodeBuddy client is not installed on this machine: token import, quota reading and daily claiming are unaffected, but account switching requires the local client (switching writes client credentials for it to apply). Install and sign in to the client first, then use local import.</span></div>",
   "本机未安装 WorkBuddy / CodeBuddy 客户端，无法切换：切换是把登录写入客户端凭据，由客户端应用。请先安装客户端并登录，再「本机导入」。": "WorkBuddy / CodeBuddy client is not installed on this machine; cannot switch: switching writes the login into client credentials for the client to apply. Install and sign in to the client first, then use local import.",
   "{label} 429 限流,冷却 {dur}(连续第 {streak} 次)": "{label} rate limited (429), cooling {dur} (consecutive #{streak})",
-  "{label} 429 限流(事件流),冷却 {dur}(连续第 {streak} 次)": "{label} rate limited (429, event stream), cooling {dur} (consecutive #{streak})"
+  "{label} 429 限流(事件流),冷却 {dur}(连续第 {streak} 次)": "{label} rate limited (429, event stream), cooling {dur} (consecutive #{streak})",
+  "账号同步已关闭（账号管理弹窗可重新开启）": "Account sync is disabled (re-enable it in the Account Management dialog)",
+  "该渠道的额度卡推送已关闭（CreditDaddy 账号管理弹窗可重新开启）": "Quota card push for this channel is disabled (re-enable it in the Account Management dialog of CreditDaddy)",
+  "> <span class=\"dim\">连接</span></label>": "> <span class=\"dim\">conn</span></label>",
+  "勾选 = 同步该渠道（「连接」= 账号连接；主勾 = 额度卡推送）。10Router 已单独配了同源渠道时，取消对应渠道即可去掉重复卡片。": "Checked = sync this channel (\"conn\" = account connections; main checkbox = quota card push). If 10Router already has a same-source channel configured, untick it here to remove the duplicate card.",
+  "保存渠道设置": "Save channel settings",
+  "渠道同步设置已保存": "Channel sync settings saved"
 }

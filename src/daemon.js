@@ -1577,6 +1577,9 @@ async function handleApi(req, res, url) {
         sources: body?.sources,
         quotaPushEnabled: body?.quotaPushEnabled,
         quotaPushIntervalMin: body?.quotaPushIntervalMin,
+        accountSyncEnabled: body?.accountSyncEnabled,
+        accountSyncProviders: body?.accountSyncProviders,
+        quotaPushDisabledProviders: body?.quotaPushDisabledProviders,
       });
       return json(res, 200, await tenrouter.publicConfig());
     } catch (e) { return json(res, 400, { error: e.message }); }
@@ -1622,7 +1625,15 @@ async function handleApi(req, res, url) {
         await tenrouter.updateConfig({ adminPassword: body.adminPassword });
       }
       const c = tenrouter.loadConfig();
-      return json(res, 200, await syncAccountsTo10r({ endpoint: c.endpoint, key: c.key, adminPassword: c.adminPassword, accounts: await loadAccounts() }));
+      // 渠道开关（账号管理弹窗勾选）：providers 空 = 不限；否则只推勾选的 CD provider
+      const enabled = c.accountSync?.enabled !== false;
+      if (!enabled) {
+        return json(res, 200, { channel: 'disabled', results: [], summary: '账号同步已关闭（账号管理弹窗可重新开启）' });
+      }
+      const allow = Array.isArray(c.accountSync?.providers) ? c.accountSync.providers : [];
+      const accounts = await loadAccounts();
+      const filtered = allow.length ? accounts.filter((a) => allow.includes(a.provider)) : accounts;
+      return json(res, 200, await syncAccountsTo10r({ endpoint: c.endpoint, key: c.key, adminPassword: c.adminPassword, accounts: filtered }));
     } catch (e) { return json(res, e.code === 'NOT_CONFIGURED' ? 409 : 500, { error: e.message, code: e.code }); }
   }
   // 额度卡推送（issue #24）：手动触发一轮 external-quota 推送（面板「免费额度」页同步按钮附带）
@@ -1951,6 +1962,13 @@ export async function startDaemon(port = DEFAULT_PORT, host = '127.0.0.1') {
         const { runQuotaPush } = await import('./externalQuota.js');
         const cfg = tenrouter.loadConfig();
         if (!cfg.endpoint || !cfg.key) return json(res, 503, { error: '未配置 10Router 地址与虚拟 key' });
+        // 已排除的渠道不回源（10R 端不该再留着这张卡——留给用户侧删卡；这里只拒绝刷新）
+        const disabled = Array.isArray(cfg.quotaPushDisabledProviders) ? cfg.quotaPushDisabledProviders : [];
+        const sourceFamily = /^(minimax-free|xiaomi-mimo|river|modelscope|longcat|tokenharbor)-/.exec(source);
+        const familyProvider = sourceFamily ? sourceFamily[1] : (source === 'tokenharbor' ? 'tokenharbor' : null);
+        if (familyProvider && disabled.includes(familyProvider)) {
+          return json(res, 410, { error: '该渠道的额度卡推送已关闭（CreditDaddy 账号管理弹窗可重新开启）' });
+        }
         const accounts = await loadAccounts();
         const r = await runQuotaPush({ endpoint: cfg.endpoint, key: cfg.key, accounts, fetchImpl: undefined, onlySource: source, noProbeMark: true });
         return json(res, 200, { ok: true, results: r.results });
