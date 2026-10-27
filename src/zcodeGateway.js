@@ -82,7 +82,7 @@ export async function setGatewayEnabled(v) {
 
 let rrIndex = 0;
 const cooling = new Map();  // accountId → 冷却截止(ms)
-// accountId → 连续 429 次数（成功即清零）：决定本次 429 的冷却时长（翻倍递增）
+// accountId → 连续 429 次数（成功即清零）：决定本次 429 走到退避阶梯的哪一档
 const coolingStreak = new Map();
 const dead = new Map();     // accountId → 拉黑时的凭据指纹（指纹变化 = 已重新登录导入，自动复活）
 // 会话粘滞（用户选 A）：sessionId → { accountId, at }。同一段对话的多轮固定用同一个号，
@@ -251,7 +251,7 @@ async function persistMark(accountId, entry) {
 export async function clearQuotaMark(accountId) {
   quotaCache.delete(accountId);
   if (!dead.has(accountId)) cooling.delete(accountId);
-  resetCoolingStreak(accountId);   // 领到新额度 = 状态已恢复，429 计数重新从 5 分钟起算
+  resetCoolingStreak(accountId);   // 领到新额度 = 状态已恢复，429 计数重新从 30 秒起算
   try {
     await withState((st) => {
       if (st?.zcodeGatewayExhausted?.[accountId]) delete st.zcodeGatewayExhausted[accountId];

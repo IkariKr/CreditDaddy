@@ -48,7 +48,7 @@ export async function setGatewayEnabled(v) {
 // ── 账号轮换状态（进程内） ──
 
 const cooling = new Map();  // accountId → 冷却截止(ms)
-// accountId → 连续 429 次数（成功即清零）：决定本次 429 的冷却时长（翻倍递增）
+// accountId → 连续 429 次数（成功即清零）：决定本次 429 走到退避阶梯的哪一档
 const coolingStreak = new Map();
 const dead = new Map();     // accountId → 拉黑时的凭据指纹（指纹变化 = 已重新授权/导入，自动复活）
 const weights = new Map();  // accountId → { w: 剩余积分权重, at: 查询时刻 }
