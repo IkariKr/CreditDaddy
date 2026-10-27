@@ -96,6 +96,12 @@ function isDead(account) {
   return false;
 }
 
+/**
+ * 测试专用：把某账号的冷却截止拨到指定时间戳（0 = 立即到期，用于快进冷却窗口）。
+ * 生产不走这里——冷却窗口只能自然到期。与 zcodeGateway.__setCoolingForTests 同款。
+ */
+export function __setCoolingForTests(accountId, untilMs) { cooling.set(accountId, untilMs); }
+
 export function __resetForTests() {
   cooling.clear();
   coolingStreak.clear();
@@ -466,6 +472,16 @@ export async function handleGateway(req, res) {
 
     if (!eventsRes.ok || !eventsRes.body) {
       cleanupSession();
+      // 事件流被 429（会话建好了、拉流被限流）同样按阶梯冷却——不判的话这个号
+      // 下一轮会话创建仍从 30 秒档起算，继续撞限流
+      if (eventsRes.status === 429) {
+        const ms = markRateLimited(account.id);
+        const dur = formatDurationMs(ms);
+        const streak = coolingStreak.get(account.id);
+        attempted.push({ account: label, ok: false, error: `429 限流（事件流），冷却 ${dur}` });
+        logger.info('TRAE-GW', '{label} 429 限流(事件流),冷却 {dur}(连续第 {streak} 次)', { label, dur, streak });
+        continue;
+      }
       attempted.push({ account: label, ok: false, error: `事件流 HTTP ${eventsRes.status}` });
       continue;
     }
@@ -712,7 +728,18 @@ export async function gatewayStatus() {
       lastAccount: stats.lastAccount,
     },
     accounts: all.length,
+    // cooling 保持字符串数组（历史形状）；冷却细节走 coolingDetail（与 zcodeGateway 同款）
     cooling: all.filter((a) => !isDead(a) && (cooling.get(a.id) || 0) > now).map((a) => a.name || a.uid || a.id),
+    coolingDetail: all.filter((a) => !isDead(a) && (cooling.get(a.id) || 0) > now)
+      .map((a) => {
+        const remainMs = (cooling.get(a.id) || 0) - now;
+        return {
+          id: a.id, name: a.name || a.uid || a.id,
+          remainMs, remainSeconds: Math.max(0, Math.ceil(remainMs / 1000)),
+          remainText: formatDurationMs(remainMs),
+          streak: coolingStreak.get(a.id) || 0,
+        };
+      }),
     dead: all.filter((a) => isDead(a)).map((a) => a.name || a.uid || a.id),
     endpoint: '/gateway/trae/v1/messages',
   };

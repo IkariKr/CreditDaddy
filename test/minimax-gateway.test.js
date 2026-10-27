@@ -310,3 +310,43 @@ test('网关未开启时 503 提示开启', async () => {
   assert.equal(res.status, 503);
   assert.match(res.body, /未开启/);
 });
+
+test('连续 429 → 退避阶梯递增（30s → 1min → 2min → 5min → 10min 封顶），成功一次即清零', async () => {
+  await resetState();
+  await seedAccount('rl', { name: '限流号' });
+
+  const rateLimit = async () => {
+    gw.__setCoolingForTests('rl', 0);   // 拨回过去，模拟冷却已到期
+    upstreamQueue.push({ status: 429, body: '{"error":{"type":"rate_limit_error"}}' });
+    await gw.handleGateway(fakeReq('POST', '{}'), captureRes());
+    return (await gw.gatewayStatus()).coolingDetail[0];
+  };
+
+  const expected = [
+    [30, '30 秒'], [60, '1 分钟'], [120, '2 分钟'], [300, '5 分钟'], [600, '10 分钟'],
+  ];
+  for (let i = 0; i < expected.length; i++) {
+    const d = await rateLimit();
+    assert.equal(d.remainSeconds, expected[i][0], `连续第 ${i + 1} 次 429 冷却 ${expected[i][1]}`);
+    assert.equal(d.remainText, expected[i][1], '30s 不能四舍五入成 1 分钟');
+    assert.equal(d.streak, i + 1);
+  }
+
+  // 第 6 次 → 停在 10 分钟封顶
+  const d = await rateLimit();
+  assert.equal(d.remainSeconds, 600, '连续第 6 次仍是 10 分钟封顶');
+  assert.equal(d.streak, 6);
+
+  // 成功一次 → 计数清零，下次 429 回到 30 秒
+  gw.__setCoolingForTests('rl', 0);
+  upstreamQueue.push(msgOk());
+  const res = captureRes();
+  await gw.handleGateway(fakeReq('POST', '{}'), res);
+  assert.equal(res.status, 200, '冷却到期后应能补全成功');
+  let st = await gw.gatewayStatus();
+  assert.equal(st.coolingDetail.length, 0, '成功后应解除冷却');
+
+  const after = await rateLimit();
+  assert.equal(after.remainSeconds, 30, '成功清零后，再次 429 回到 30 秒');
+  assert.equal(after.streak, 1);
+});

@@ -1723,5 +1723,6 @@
   "<span class=\"pill gw\" title=\"体验包接口最近一次补全用的账号（多账号时按轮转自动选择，与客户端登录无关）\">接口使用中</span>": "<span class=\"pill gw\" title=\"Pack API last used this account (auto-selected by rotation with multiple accounts, independent of client login)\">In use by API</span>",
   "<div class=\"z-row\"><span class=\"z-label\">客户端</span><span class=\"z-text\">本机未安装 WorkBuddy / CodeBuddy 客户端：Token 导入、额度读取与每日领取不受影响；但「切换账号」需要本机客户端（切换是写入客户端凭据由其应用）。请先安装并登录客户端，再「本机导入」。</span></div>": "<div class=\"z-row\"><span class=\"z-label\">Client</span><span class=\"z-text\">WorkBuddy / CodeBuddy client is not installed on this machine: token import, quota reading and daily claiming are unaffected, but account switching requires the local client (switching writes client credentials for it to apply). Install and sign in to the client first, then use local import.</span></div>",
   "本机未安装 WorkBuddy / CodeBuddy 客户端，无法切换：切换是把登录写入客户端凭据，由客户端应用。请先安装客户端并登录，再「本机导入」。": "WorkBuddy / CodeBuddy client is not installed on this machine; cannot switch: switching writes the login into client credentials for the client to apply. Install and sign in to the client first, then use local import.",
-  "{label} 429 限流,冷却 {dur}(连续第 {streak} 次)": "{label} rate limited (429), cooling {dur} (consecutive #{streak})"
+  "{label} 429 限流,冷却 {dur}(连续第 {streak} 次)": "{label} rate limited (429), cooling {dur} (consecutive #{streak})",
+  "{label} 429 限流(事件流),冷却 {dur}(连续第 {streak} 次)": "{label} rate limited (429, event stream), cooling {dur} (consecutive #{streak})"
 }

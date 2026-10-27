@@ -202,3 +202,73 @@ test('Trae 网关 401 自动拉黑，开关重启清空黑名单', async () => {
   const st2 = await gw.gatewayStatus();
   assert.equal(st2.dead.length, 0);
 });
+
+test('连续 429 → 退避阶梯递增（30s → 1min → 2min → 5min → 10min 封顶），成功一次即清零', async () => {
+  await resetState();
+  const acc = await seedAccount('t1');
+
+  const rateLimit = async () => {
+    gw.__setCoolingForTests('t1', 0);   // 拨回过去，模拟冷却已到期
+    upstreamQueue.push({ status: 429, body: JSON.stringify({ code: 1002, message: 'Too Many Requests' }) });
+    const req = fakeReq('POST', JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }));
+    const res = fakeRes();
+    await gw.handleGateway(req, res);
+    assert.equal(res.statusCode, 502);
+    return (await gw.gatewayStatus()).coolingDetail[0];
+  };
+
+  const expected = [
+    [30, '30 秒'], [60, '1 分钟'], [120, '2 分钟'], [300, '5 分钟'], [600, '10 分钟'],
+  ];
+  for (let i = 0; i < expected.length; i++) {
+    const d = await rateLimit();
+    assert.equal(d.remainSeconds, expected[i][0], `连续第 ${i + 1} 次 429 冷却 ${expected[i][1]}`);
+    assert.equal(d.remainText, expected[i][1]);
+    assert.equal(d.streak, i + 1);
+  }
+
+  // 第 6 次 → 停在 10 分钟封顶
+  const d6 = await rateLimit();
+  assert.equal(d6.remainSeconds, 600, '连续第 6 次仍是 10 分钟封顶');
+  assert.equal(d6.streak, 6);
+
+  // 成功一次 → 计数清零，下次 429 回到 30 秒
+  gw.__setCoolingForTests('t1', 0);
+  upstreamQueue.push({
+    status: 200,
+    body: JSON.stringify({ code: 0, data: { chat_session_id: 'cs_ok', message_id: 'msg_ok' } }),
+  });
+  upstreamQueue.push({ status: 200, sse: true, body: 'data: {"thought": "ok"}\n\n' });
+  upstreamQueue.push({ status: 200, body: JSON.stringify({ code: 0 }) });
+  const okReq = fakeReq('POST', JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }));
+  const okRes = fakeRes();
+  await gw.handleGateway(okReq, okRes);
+  assert.equal(okRes.statusCode, 200, okRes.body);
+  let st = await gw.gatewayStatus();
+  assert.equal(st.coolingDetail.length, 0, '成功后应解除冷却');
+
+  const after = await rateLimit();
+  assert.equal(after.remainSeconds, 30, '成功清零后，再次 429 回到 30 秒');
+  assert.equal(after.streak, 1);
+});
+
+test('事件流阶段 429 同样进阶梯（会话建好、拉流被限流）', async () => {
+  await resetState();
+  const acc = await seedAccount('t2');
+
+  // 会话创建成功，events 流被 429 拒
+  upstreamQueue.push({
+    status: 200,
+    body: JSON.stringify({ code: 0, data: { chat_session_id: 'cs_ev', message_id: 'msg_ev' } }),
+  });
+  upstreamQueue.push({ status: 429, body: JSON.stringify({ code: 1002, message: 'Too Many Requests' }) });
+  const req = fakeReq('POST', JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }));
+  const res = fakeRes();
+  await gw.handleGateway(req, res);
+  assert.equal(res.statusCode, 502);
+
+  const d = (await gw.gatewayStatus()).coolingDetail[0];
+  assert.ok(d, '事件流 429 应进冷却');
+  assert.equal(d.remainSeconds, 30, '首次事件流 429 冷却 30 秒');
+  assert.equal(d.streak, 1);
+});

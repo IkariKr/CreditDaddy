@@ -109,6 +109,12 @@ function isDead(account) {
 /** 测试专用：仅让权重快照过期（保留粘性/拉黑状态），用于模拟额度变化 */
 export function __expireWeightsForTests() { weights.clear(); }
 
+/**
+ * 测试专用：把某账号的冷却截止拨到指定时间戳（0 = 立即到期，用于快进冷却窗口）。
+ * 生产不走这里——冷却窗口只能自然到期。与 zcodeGateway.__setCoolingForTests 同款。
+ */
+export function __setCoolingForTests(accountId, untilMs) { cooling.set(accountId, untilMs); }
+
 /** 测试专用：清空进程内状态 */
 export function __resetForTests() {
   cooling.clear();
@@ -435,7 +441,18 @@ export async function gatewayStatus() {
       lastAccount: stats.lastAccount,
     },
     accounts: all.length,
+    // cooling 保持字符串数组（历史形状）；冷却细节走 coolingDetail（与 zcodeGateway 同款）
     cooling: all.filter((a) => !isDead(a) && (cooling.get(a.id) || 0) > now).map((a) => a.name || a.uid || a.id),
+    coolingDetail: all.filter((a) => !isDead(a) && (cooling.get(a.id) || 0) > now)
+      .map((a) => {
+        const remainMs = (cooling.get(a.id) || 0) - now;
+        return {
+          id: a.id, name: a.name || a.uid || a.id,
+          remainMs, remainSeconds: Math.max(0, Math.ceil(remainMs / 1000)),
+          remainText: formatDurationMs(remainMs),
+          streak: coolingStreak.get(a.id) || 0,
+        };
+      }),
     dead: all.filter((a) => isDead(a)).map((a) => a.name || a.uid || a.id),
     endpoint: '/gateway/minimax/v1/messages',
   };
