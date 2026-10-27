@@ -7,7 +7,7 @@
  * 架构特性：
  * 1. 多账号粘性主力（provider=minimax）：按剩余积分选主力并保持，出错/限流/凭据失效自动切下一个
  * 2. 自动刷新与重试：401 凭据失效时自动走 OAuth refresh 换取新 token 并重试，彻底失效才拉黑
- * 3. 429 限流保护：429 限流自动冷却（退避阶梯 30s → 1min → 2min → 4min 封顶，成功一次即清零）
+ * 3. 429 限流保护：429 限流自动冷却（退避阶梯 30s → 1min → 2min → 5min → 10min 封顶，成功一次即清零）
  * 4. 局域网访问控制：继承相同的白名单与回环检查机制
  * 5. SSE 与 JSON 流式透明转发
  */
@@ -73,8 +73,8 @@ function markCooling(id, ms = ACCOUNT_COOLING_MS) {
   cooling.set(id, Date.now() + ms);
 }
 
-// 429 退避阶梯：30s → 1min → 2min → 4min 封顶（与 ZCode 网关同款）。
-const RATE_LIMIT_BACKOFF_MS = [30_000, 60_000, 120_000, 240_000];
+// 429 退避阶梯：30s → 1min → 2min → 5min → 10min 封顶（与 ZCode 网关同款）。
+const RATE_LIMIT_BACKOFF_MS = [30_000, 60_000, 120_000, 300_000, 600_000];
 
 function markRateLimited(id) {
   const streak = (coolingStreak.get(id) || 0) + 1;

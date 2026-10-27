@@ -287,7 +287,7 @@ test('401 拉黑 / 额度与 429 跳过 / 最终成功', async () => {
   assert.match(rows[2].headers.Authorization, /^Bearer jwt-good-/);
 });
 
-test('连续 429 → 退避阶梯递增（30s → 1min → 2min → 4min 封顶），成功一次即清零', async () => {
+test('连续 429 → 退避阶梯递增（30s → 1min → 2min → 5min → 10min 封顶），成功一次即清零', async () => {
   await resetState();
   zauto.setZcodeCaptchaProvider(null);
   await seedAccount('rl', '限流号');
@@ -299,29 +299,20 @@ test('连续 429 → 退避阶梯递增（30s → 1min → 2min → 4min 封顶�
     return (await gw.gatewayStatus()).coolingDetail[0];
   };
 
-  let d = await rateLimit();
-  assert.equal(d.remainSeconds, 30, '连续第 1 次 429 冷却 30 秒');
-  assert.equal(d.remainText, '30 秒', '30s 不能四舍五入成 1 分钟');
-  assert.equal(d.streak, 1);
+  const expected = [
+    [30, '30 秒'], [60, '1 分钟'], [120, '2 分钟'], [300, '5 分钟'], [600, '10 分钟'],
+  ];
+  for (let i = 0; i < expected.length; i++) {
+    const d = await rateLimit();
+    assert.equal(d.remainSeconds, expected[i][0], `连续第 ${i + 1} 次 429 冷却 ${expected[i][1]}`);
+    assert.equal(d.remainText, expected[i][1], '30s 不能四舍五入成 1 分钟');
+    assert.equal(d.streak, i + 1);
+  }
 
-  d = await rateLimit();
-  assert.equal(d.remainSeconds, 60, '连续第 2 次 429 冷却 1 分钟');
-  assert.equal(d.remainText, '1 分钟');
-  assert.equal(d.streak, 2);
-
-  d = await rateLimit();
-  assert.equal(d.remainSeconds, 120, '连续第 3 次 429 冷却 2 分钟');
-  assert.equal(d.remainText, '2 分钟');
-  assert.equal(d.streak, 3);
-
-  d = await rateLimit();
-  assert.equal(d.remainSeconds, 240, '连续第 4 次 429 冷却 4 分钟');
-  assert.equal(d.remainText, '4 分钟');
-  assert.equal(d.streak, 4);
-
-  d = await rateLimit();
-  assert.equal(d.remainSeconds, 240, '连续第 5 次仍是 4 分钟封顶');
-  assert.equal(d.streak, 5);
+  // 第 6 次 → 停在 10 分钟封顶（不再涨）
+  const d = await rateLimit();
+  assert.equal(d.remainSeconds, 600, '连续第 6 次仍是 10 分钟封顶');
+  assert.equal(d.streak, 6);
 
   // 成功一次 → 计数清零，下次 429 回到 30 秒
   gw.__setCoolingForTests('rl', 0);
@@ -332,9 +323,9 @@ test('连续 429 → 退避阶梯递增（30s → 1min → 2min → 4min 封顶�
   let st = await gw.gatewayStatus();
   assert.equal(st.coolingDetail.length, 0, '成功后应解除冷却');
 
-  d = await rateLimit();
-  assert.equal(d.remainSeconds, 30, '成功清零后，再次 429 回到 30 秒');
-  assert.equal(d.streak, 1);
+  const after = await rateLimit();
+  assert.equal(after.remainSeconds, 30, '成功清零后，再次 429 回到 30 秒');
+  assert.equal(after.streak, 1);
 });
 
 test('拉黑后重新登录导入（JWT 变化）→ 自动复活，网关恢复', async () => {

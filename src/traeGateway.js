@@ -7,7 +7,7 @@
  * 架构特性：
  * 1. 账号多路轮换（provider=trae）：自动在有效账号间按剩余积分加权轮询（SWRR）
  * 2. 凭据热对齐：401 时若为本机导入账号，尝试重读 storage.json 最新登录态
- * 3. 429 限流保护：429 限流自动冷却（退避阶梯 30s → 1min → 2min → 4min 封顶，成功一次即清零）
+ * 3. 429 限流保护：429 限流自动冷却（退避阶梯 30s → 1min → 2min → 5min → 10min 封顶，成功一次即清零）
  * 4. 局域网访问控制：继承相同的白名单与回环检查机制
  * 5. SSE 增量转换：将 Trae SOLO 累积流转换为标准 Anthropic 流式 SSE 或一次性 JSON 响应
  */
@@ -22,8 +22,8 @@ import { formatDurationMs } from './formatDuration.js';
 
 const TRAE_SOLO_BASE = 'https://solo.trae.cn/api/remote/v1';
 const ACCOUNT_COOLING_MS = 5 * 60_000;
-// 429 退避阶梯：30s → 1min → 2min → 4min 封顶（与 ZCode 网关同款）。
-const RATE_LIMIT_BACKOFF_MS = [30_000, 60_000, 120_000, 240_000];
+// 429 退避阶梯：30s → 1min → 2min → 5min → 10min 封顶（与 ZCode 网关同款）。
+const RATE_LIMIT_BACKOFF_MS = [30_000, 60_000, 120_000, 300_000, 600_000];
 const MAX_ATTEMPTS = 5;
 const UPSTREAM_TIMEOUT_MS = 600_000;
 const UPSTREAM_CONNECT_MS = 15_000;

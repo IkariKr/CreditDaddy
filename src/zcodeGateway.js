@@ -11,7 +11,7 @@
  *   → SSE / JSON 原样流式回传。
  *
  * 失败分类：3007/3012（验证码）→ 作废 token 重解重试；401（JWT 失效）→ 拉黑账号；
- * 402/额度不足 → 标记耗尽；429 → 冷却（退避阶梯 30s → 1min → 2min → 4min 封顶，成功即清零）。
+ * 402/额度不足 → 标记耗尽；429 → 冷却（退避阶梯 30s → 1min → 2min → 5min → 10min 封顶，成功即清零）。
  * 全部失败返回 502 + 各账号结论。
  *
  * 仅限本机回路使用：daemon 只绑 127.0.0.1，网关不做鉴权（跨机场景需要先给
@@ -49,10 +49,11 @@ const PLAN_MESSAGES_URL = 'https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/mes
 const CAPTCHA_CACHE_TTL_MS = 30_000;
 const ACCOUNT_COOLING_MS = 5 * 60_000;   // 额度不足（402）等「非限流」失败的冷却
 const MAX_ATTEMPTS = 6;
-// 429 限流的退避阶梯：30s → 1min → 2min → 4min，之后一直停在 4min（不再翻倍）。
-// 上游限流窗口通常就是分钟级，从 30s 起步能快速恢复、又不至于一开始就放弃太久；
-// 240s 封顶避免「持续被限流的号」被永久排除在轮换之外。见 markRateLimited。
-const RATE_LIMIT_BACKOFF_MS = [30_000, 60_000, 120_000, 240_000];
+// 429 限流的退避阶梯：30s → 1min → 2min → 5min → 10min，之后一直停在 10min。
+// 前四档基本翻倍（上游限流窗口多在分钟级，起步 30s 能快速恢复），
+// 2min → 5min 那跳是陡的（×2.5）：说明再往后就是真被持续限流了，给到 10min 兜底后不再涨，
+// 避免「一直被限流的号」被永久排除在轮换之外。见 markRateLimited。
+const RATE_LIMIT_BACKOFF_MS = [30_000, 60_000, 120_000, 300_000, 600_000];
 // 上游补全墙钟上限（响应头到齐后 body 仍可流式跑这么久）
 const UPSTREAM_TIMEOUT_MS = 600_000;
 // 连接段（DNS/TCP/TLS/首字节）限时：上游黑洞挂死时几秒内换下一条路 / 代理兜底，
@@ -91,8 +92,8 @@ const sessionSticky = new Map();
 function markCooling(id, ms = ACCOUNT_COOLING_MS) { cooling.set(id, Date.now() + ms); }
 
 /**
- * 429 限流：按连续次数走退避阶梯（30s → 1min → 2min → 4min 封顶）。
- * 上游限流窗口通常是分钟级，从 30s 起步能快速恢复，又不会像固定 5 分钟那样
+ * 429 限流：按连续次数走退避阶梯（30s → 1min → 2min → 5min → 10min 封顶）。
+ * 上游限流窗口通常在分钟级，从 30s 起步能快速恢复，又不会像固定 5 分钟那样
  * 一直撞在限流窗口里（日志里清一色「冷却 5 分钟」就是这么来的）。
  * 成功时 resetCoolingStreak 清零，所以偶发 429 不会累积。
  */

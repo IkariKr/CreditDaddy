@@ -18,12 +18,14 @@ test('1 分钟及以上按分钟显示', () => {
   assert.equal(formatDurationMs(60_000), '1 分钟');
   assert.equal(formatDurationMs(120_000), '2 分钟');
   assert.equal(formatDurationMs(240_000), '4 分钟');
+  assert.equal(formatDurationMs(300_000), '5 分钟');
+  assert.equal(formatDurationMs(600_000), '10 分钟');
   assert.equal(formatDurationMs(30 * 60_000), '30 分钟');
 });
 
-test('退避阶梯四档的实际输出', () => {
-  const ladder = [30_000, 60_000, 120_000, 240_000];
-  assert.deepEqual(ladder.map(formatDurationMs), ['30 秒', '1 分钟', '2 分钟', '4 分钟']);
+test('退避阶梯五档的实际输出', () => {
+  const ladder = [30_000, 60_000, 120_000, 300_000, 600_000];
+  assert.deepEqual(ladder.map(formatDurationMs), ['30 秒', '1 分钟', '2 分钟', '5 分钟', '10 分钟']);
 });
 
 test('异常输入不崩：0 / 负数 / 非有限值', () => {
