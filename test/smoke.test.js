@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -477,6 +478,22 @@ test('导入：10router codebuddy-* 映射为 WorkBuddy，兼容更名前的 Qod
   assert.equal(legacy.accounts[0].token, 'dt-legacy');
   const legacySealed = transfer.sealTransfer({ format: 'qoderdaddy-accounts', accounts: [{ provider: 'qoder', token: 'dt-x' }] }, 'pw-old');
   assert.equal(transfer.parseImport(legacySealed, { password: 'pw-old' }).source, 'creditdaddy');
+});
+
+test('detectWorkbuddy：凭据目录存在但无客户端 exe 时 installed 为 false（切换守卫依据）', async () => {
+  const wb = await import('../src/workbuddyLocal.js');
+  // CI / 无 WorkBuddy 客户端的机器：没有 exe 也没有会话 → 未安装
+  // （凭据目录可能因历史静默切换被 mkdir 出来——目录存在不能当「已安装」）
+  const d = wb.detectWorkbuddy();
+  assert.equal(typeof d.installed, 'boolean');
+  assert.equal(typeof d.signedIn, 'boolean');
+  assert.equal(d.dirExists, fsSync.existsSync(d.dir));
+  // 没有客户端 exe 时：Linux/macOS 无候选路径 → installed 只能由「有会话」兜底；
+  // Windows 上无 exe 且无当前会话 → 必为 false（CreditDaddy mkdir 出的空壳目录不算）
+  if (!d.clientPath && !d.signedIn) {
+    const hasCliCandidates = process.platform !== 'linux';
+    if (!hasCliCandidates) assert.equal(d.installed, false);
+  }
 });
 
 test('切换 WorkBuddy 账号：写入当前会话并清除登出标记', async () => {

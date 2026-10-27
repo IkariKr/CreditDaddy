@@ -2044,7 +2044,7 @@ function renderStatus() {
   // 产品相关提示只在对应标签页出现
   const hasIntl = state.view === 'qoder' && state.region !== 'cn' && state.accounts.some((a) => a.provider === 'qoder');
   const n = $('notice');
-  n.classList.toggle('info', state.view === 'zcode' || state.view === 'mirasim' || state.view === 'catpaw' || state.view === 'trae' || state.view === 'minimax' || (hasIntl && Boolean(s.riskIdentity)));
+  n.classList.toggle('info', state.view === 'zcode' || state.view === 'mirasim' || state.view === 'catpaw' || state.view === 'trae' || state.view === 'minimax' || (state.view === 'workbuddy' && s.workbuddyClient && s.workbuddyClient.installed === false) || (hasIntl && Boolean(s.riskIdentity)));
   if (state.view === 'minimax') {
     n.style.display = '';
     n.innerHTML = T('<div class="z-row"><span class="z-label">每日签到</span><span class="z-text">每日签到领 800~2000 积分 + 400 连签加成。支持自动检测本机 MiniMax Code 凭据与 Bearer Token 导入，自带标准 Anthropic 本地网关。</span></div>');
@@ -2069,6 +2069,10 @@ function renderStatus() {
     n.innerHTML = T('<div class="z-row"><span class="z-label">活动领取</span><span class="z-text">活动包积分，每日 0 点左右刷新（无每日签到）。自动领取')
       + (ac ? T('每 ') + ziv + T(' 分钟检查资格') + (zwin > 0 ? T('，本次运行 ') + zwin + T(' 分钟') : T('，持续运行')) : T('未开启（右上角设置轮询计划）'))
       + T('；礼物图标 = 手动临时领。</span></div>');
+  } else if (state.view === 'workbuddy' && s.workbuddyClient && s.workbuddyClient.installed === false) {
+    // WorkBuddy 客户端未安装：切换线是死路（写凭据没人应用），进页就明说而不是切了才失败
+    n.style.display = '';
+    n.innerHTML = T('<div class="z-row"><span class="z-label">客户端</span><span class="z-text">本机未安装 WorkBuddy / CodeBuddy 客户端：Token 导入、额度读取与每日领取不受影响；但「切换账号」需要本机客户端（切换是写入客户端凭据由其应用）。请先安装并登录客户端，再「本机导入」。</span></div>');
   } else if (hasIntl && !s.riskIdentity && umidOffer(s)) {
     n.style.display = '';
     const busy = s.umid.installing || umidBusy;
@@ -3378,6 +3382,11 @@ async function onCardClick(e) {
   if (act === 'claim') return openClaim(id);
   if (act === 'switch') {
     const a = state.accounts.find((x) => x.id === id);
+    // 本机没装客户端时先拦下（WorkBuddy 此前静默硬写凭据目录，面板显示已切换但客户端永远不应用）
+    if (a && a.product === 'workbuddy' && state.status && state.status.workbuddyClient && state.status.workbuddyClient.installed === false) {
+      toast(T('本机未安装 WorkBuddy / CodeBuddy 客户端，无法切换：切换是把登录写入客户端凭据，由客户端应用。请先安装客户端并登录，再「本机导入」。'), false);
+      return;
+    }
     const client = (CLIENT_LABEL[a && a.product] ? T(CLIENT_LABEL[a && a.product]) : '') || (a && prodLabel(a.product)) || T('客户端');
     const tip = a && a.product === 'zcode'
       ? T('\n需先退出 ZCode；切换后重新打开 ZCode 即为新账号。当前登录会先保存到 CreditDaddy，不会丢号。')

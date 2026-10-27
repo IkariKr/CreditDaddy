@@ -99,6 +99,46 @@ export function currentWorkbuddyUid() {
   return readWorkbuddySessions().accounts.find((a) => a.current)?.uid || null;
 }
 
+// 客户端可执行文件候选（VS Code 系安装惯例：%LOCALAPPDATA%\Programs\<名>\<名>.exe）。
+// 「已安装」只认 exe：凭据目录不能当依据——CreditDaddy 自己切换时 mkdir 也会把目录建出来
+// （无客户端时静默切换留下的空壳目录），拿目录判断会把没装客户端的机器误报成已安装。
+const CLIENT_CANDIDATES = process.platform === 'win32'
+  ? [
+      ['Programs', 'CodeBuddy', 'CodeBuddy.exe'],
+      ['Programs', 'WorkBuddy', 'WorkBuddy.exe'],
+      ['CodeBuddy', 'CodeBuddy.exe'],
+      ['WorkBuddy', 'WorkBuddy.exe'],
+    ]
+  : process.platform === 'darwin'
+    ? ['/Applications/CodeBuddy.app', '/Applications/WorkBuddy.app']
+    : [];
+
+/**
+ * 本机 WorkBuddy / CodeBuddy 客户端探测（面板「客户端：未安装」提示与切换拦截用）。
+ * Linux / NAS 没有已知安装路径，退而用「凭据目录里有会话文件」判定——
+ * 会话文件只有客户端登录后才写，纯 Token 导入的机器不会产生。
+ */
+export function detectWorkbuddy() {
+  const dir = workbuddyAuthDir();
+  let dirExists = false;
+  try { dirExists = fs.statSync(dir).isDirectory(); } catch { /* 未安装 / 从未登录 */ }
+  let clientPath = null;
+  for (const cand of CLIENT_CANDIDATES) {
+    const p = process.platform === 'win32' && Array.isArray(cand)
+      ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), ...cand)
+      : cand;
+    try { if (fs.existsSync(p)) { clientPath = p; break; } } catch { /* 下一个候选 */ }
+  }
+  const sessions = dirExists ? readWorkbuddySessions() : { accounts: [] };
+  return {
+    dir,
+    dirExists,
+    clientPath,
+    installed: Boolean(clientPath) || (CLIENT_CANDIDATES.length === 0 && sessions.accounts.length > 0),
+    signedIn: sessions.accounts.some((a) => a.current),
+  };
+}
+
 /**
  * 把账号写成 WorkBuddy 当前会话（切换账号）。需要账号带有导入时保存的会话信息。
  * @returns {{ file, previousUid }}
