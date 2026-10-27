@@ -218,7 +218,6 @@
   "{kind} 登录失败:{err}": "{kind} 登錄失敗:{err}",
   "{label} {msg}": "{label} {msg}",
   "{label} 429 限流,冷却 5 分钟": "{label} 429 限流,冷卻 5 分鐘",
-  "{label} 429 限流,冷却 {mins} 分钟(连续第 {streak} 次)": "{label} 429 限流,冷卻 {mins} 分鐘(連續第 {streak} 次)",
   "{label} 补全成功 ({status})": "{label} 補全成功 ({status})",
   "{label} 补全成功 （{status}）": "{label} 補全成功 ({status})",
   "{label} 额度不足 ({status})": "{label} 額度不足 ({status})",
@@ -1723,5 +1722,6 @@
   "<span class=\"pill gw\" title=\"体验包接口最近一次补全用的账号（{n} 个 ZCode 账号按轮转分摊请求，每个请求换一个，与客户端登录无关）\">接口使用中</span>": "<span class=\"pill gw\" title=\"體驗包介面最近一次補全用的帳號（{n} 個 ZCode 帳號按輪轉分攤請求，每個請求換一個，與客戶端登入無關）\">介面使用中</span>",
   "<span class=\"pill gw\" title=\"体验包接口最近一次补全用的账号（多账号时按轮转自动选择，与客户端登录无关）\">接口使用中</span>": "<span class=\"pill gw\" title=\"體驗包介面最近一次補全用的帳號（多帳號時按輪轉自動選擇，與客戶端登入無關）\">介面使用中</span>",
   "<div class=\"z-row\"><span class=\"z-label\">客户端</span><span class=\"z-text\">本机未安装 WorkBuddy / CodeBuddy 客户端：Token 导入、额度读取与每日领取不受影响；但「切换账号」需要本机客户端（切换是写入客户端凭据由其应用）。请先安装并登录客户端，再「本机导入」。</span></div>": "<div class=\"z-row\"><span class=\"z-label\">客戶端</span><span class=\"z-text\">本機未安裝 WorkBuddy / CodeBuddy 客戶端：Token 導入、額度讀取與每日領取不受影響；但「切換賬號」需要本機客戶端（切換是寫入客戶端憑據由其應用）。請先安裝並登錄客戶端，再「本機導入」。</span></div>",
-  "本机未安装 WorkBuddy / CodeBuddy 客户端，无法切换：切换是把登录写入客户端凭据，由客户端应用。请先安装客户端并登录，再「本机导入」。": "本機未安裝 WorkBuddy / CodeBuddy 客戶端，無法切換：切換是把登錄寫入客戶端憑據，由客戶端應用。請先安裝並登錄客戶端，再「本機導入」。"
+  "本机未安装 WorkBuddy / CodeBuddy 客户端，无法切换：切换是把登录写入客户端凭据，由客户端应用。请先安装客户端并登录，再「本机导入」。": "本機未安裝 WorkBuddy / CodeBuddy 客戶端，無法切換：切換是把登錄寫入客戶端憑據，由客戶端應用。請先安裝並登錄客戶端，再「本機導入」。",
+  "{label} 429 限流,冷却 {dur}(连续第 {streak} 次)": "{label} 429 限流,冷卻 {dur}(連續第 {streak} 次)"
 }

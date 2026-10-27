@@ -11,8 +11,8 @@
  *   → SSE / JSON 原样流式回传。
  *
  * 失败分类：3007/3012（验证码）→ 作废 token 重解重试；401（JWT 失效）→ 拉黑账号；
- * 402/额度不足 → 标记耗尽；429 → 冷却（连续 429 翻倍递增：5 → 10 → 20 分钟，封顶 30 分钟，
- * 成功即清零）。全部失败返回 502 + 各账号结论。
+ * 402/额度不足 → 标记耗尽；429 → 冷却（退避阶梯 30s → 1min → 2min → 4min 封顶，成功即清零）。
+ * 全部失败返回 502 + 各账号结论。
  *
  * 仅限本机回路使用：daemon 只绑 127.0.0.1，网关不做鉴权（跨机场景需要先给
  * daemon 加绑定/密钥，见 README）。NAS/纯 CLI 环境没有验证码提供者，网关开不了。
@@ -43,14 +43,16 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { logger, summarizeAttempts } from './logger.js';
 import { t } from './i18n.js';
+import { formatDurationMs } from './formatDuration.js';
 
 const PLAN_MESSAGES_URL = 'https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages';
 const CAPTCHA_CACHE_TTL_MS = 30_000;
-const ACCOUNT_COOLING_MS = 5 * 60_000;
-// 同一账号连续 429 时冷却翻倍（5 → 10 → 20 分钟，封顶 30 分钟），避免对限流中的号反复空打；
-// 成功一次即清零计数，所以「偶尔撞一次 429」不会累积。见 markCooling。
-const ACCOUNT_COOLING_MAX_MS = 30 * 60_000;
+const ACCOUNT_COOLING_MS = 5 * 60_000;   // 额度不足（402）等「非限流」失败的冷却
 const MAX_ATTEMPTS = 6;
+// 429 限流的退避阶梯：30s → 1min → 2min → 4min，之后一直停在 4min（不再翻倍）。
+// 上游限流窗口通常就是分钟级，从 30s 起步能快速恢复、又不至于一开始就放弃太久；
+// 240s 封顶避免「持续被限流的号」被永久排除在轮换之外。见 markRateLimited。
+const RATE_LIMIT_BACKOFF_MS = [30_000, 60_000, 120_000, 240_000];
 // 上游补全墙钟上限（响应头到齐后 body 仍可流式跑这么久）
 const UPSTREAM_TIMEOUT_MS = 600_000;
 // 连接段（DNS/TCP/TLS/首字节）限时：上游黑洞挂死时几秒内换下一条路 / 代理兜底，
@@ -89,19 +91,20 @@ const sessionSticky = new Map();
 function markCooling(id, ms = ACCOUNT_COOLING_MS) { cooling.set(id, Date.now() + ms); }
 
 /**
- * 429 限流：按连续次数翻倍冷却（5 → 10 → 20 → 30 分钟封顶）。
- * 上游的 429 通常带限流窗口，固定 5 分钟会一直撞在窗口里；翻倍能更快退出限流状态。
+ * 429 限流：按连续次数走退避阶梯（30s → 1min → 2min → 4min 封顶）。
+ * 上游限流窗口通常是分钟级，从 30s 起步能快速恢复，又不会像固定 5 分钟那样
+ * 一直撞在限流窗口里（日志里清一色「冷却 5 分钟」就是这么来的）。
  * 成功时 resetCoolingStreak 清零，所以偶发 429 不会累积。
  */
 function markRateLimited(id) {
   const streak = (coolingStreak.get(id) || 0) + 1;
   coolingStreak.set(id, streak);
-  const ms = Math.min(ACCOUNT_COOLING_MAX_MS, ACCOUNT_COOLING_MS * 2 ** (streak - 1));
+  const ms = RATE_LIMIT_BACKOFF_MS[Math.min(streak, RATE_LIMIT_BACKOFF_MS.length) - 1];
   cooling.set(id, Date.now() + ms);
   return ms;
 }
 
-/** 账号补全成功：清零连续 429 计数（下次 429 重新从 5 分钟起算） */
+/** 账号补全成功：清零连续 429 计数（下次 429 重新从 30 秒起算） */
 function resetCoolingStreak(id) { coolingStreak.delete(id); }
 
 /**
@@ -709,9 +712,10 @@ export async function handleGateway(req, res) {
     }
     if (upstream.status === 429) {
       const ms = markRateLimited(account.id);
-      const mins = Math.round(ms / 60_000);
-      attempted.push({ account: label, ok: false, error: `429 限流，冷却 ${mins} 分钟` });
-      logger.debug('ZCODE-GW', '{label} 429 限流,冷却 {mins} 分钟(连续第 {streak} 次)', { label, mins, streak: coolingStreak.get(account.id) });
+      const dur = formatDurationMs(ms);
+      const streak = coolingStreak.get(account.id);
+      attempted.push({ account: label, ok: false, error: `429 限流，冷却 ${dur}` });
+      logger.debug('ZCODE-GW', '{label} 429 限流,冷却 {dur}(连续第 {streak} 次)', { label, dur, streak });
       continue;
     }
     // 其他错误：友好化展示 + 原样透传给客户端
@@ -760,7 +764,16 @@ export async function gatewayStatus() {
     // cooling 保持字符串数组（历史形状，测试与面板按名字读）；冷却细节走 coolingDetail
     cooling: all.filter((a) => !isDead(a) && (cooling.get(a.id) || 0) > now).map((a) => a.name || a.uid || a.id),
     coolingDetail: all.filter((a) => !isDead(a) && (cooling.get(a.id) || 0) > now)
-      .map((a) => ({ id: a.id, name: a.name || a.uid || a.id, minutes: Math.max(1, Math.round(((cooling.get(a.id) || 0) - now) / 60_000)), streak: coolingStreak.get(a.id) || 0 })),
+      .map((a) => {
+        const remainMs = (cooling.get(a.id) || 0) - now;
+        return {
+          id: a.id, name: a.name || a.uid || a.id,
+          // 秒数为准：退避阶梯第一档只有 30s，按分钟四舍五入会显示成 1 分钟
+          remainMs, remainSeconds: Math.max(0, Math.ceil(remainMs / 1000)),
+          remainText: formatDurationMs(remainMs),
+          streak: coolingStreak.get(a.id) || 0,
+        };
+      }),
     dead: all.filter((a) => isDead(a)).map((a) => a.name || a.uid || a.id),
     endpoint: '/gateway/zcode/v1/messages',
     note: hasCaptcha ? null : '需要桌面版 CreditDaddy（隐藏窗口验证码），纯 CLI / NAS 环境不可用',

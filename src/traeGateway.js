@@ -7,8 +7,7 @@
  * 架构特性：
  * 1. 账号多路轮换（provider=trae）：自动在有效账号间按剩余积分加权轮询（SWRR）
  * 2. 凭据热对齐：401 时若为本机导入账号，尝试重读 storage.json 最新登录态
- * 3. 429 限流保护：429 限流自动冷却（连续 429 翻倍递增：5 → 10 → 20 分钟，封顶 30 分钟，
- *    成功一次即清零）
+ * 3. 429 限流保护：429 限流自动冷却（退避阶梯 30s → 1min → 2min → 4min 封顶，成功一次即清零）
  * 4. 局域网访问控制：继承相同的白名单与回环检查机制
  * 5. SSE 增量转换：将 Trae SOLO 累积流转换为标准 Anthropic 流式 SSE 或一次性 JSON 响应
  */
@@ -19,11 +18,12 @@ import { fetchTraeQuota } from './traeClient.js';
 import { gatewayHostSuggestion } from './tenrouter.js';
 import { logger, summarizeAttempts } from './logger.js';
 import { t } from './i18n.js';
+import { formatDurationMs } from './formatDuration.js';
 
 const TRAE_SOLO_BASE = 'https://solo.trae.cn/api/remote/v1';
 const ACCOUNT_COOLING_MS = 5 * 60_000;
-// 连续 429 冷却翻倍（5 → 10 → 20，封顶 30 分钟），成功即清零。见 zcodeGateway 同款实现。
-const ACCOUNT_COOLING_MAX_MS = 30 * 60_000;
+// 429 退避阶梯：30s → 1min → 2min → 4min 封顶（与 ZCode 网关同款）。
+const RATE_LIMIT_BACKOFF_MS = [30_000, 60_000, 120_000, 240_000];
 const MAX_ATTEMPTS = 5;
 const UPSTREAM_TIMEOUT_MS = 600_000;
 const UPSTREAM_CONNECT_MS = 15_000;
@@ -73,7 +73,7 @@ function markCooling(id, ms = ACCOUNT_COOLING_MS) {
 function markRateLimited(id) {
   const streak = (coolingStreak.get(id) || 0) + 1;
   coolingStreak.set(id, streak);
-  const ms = Math.min(ACCOUNT_COOLING_MAX_MS, ACCOUNT_COOLING_MS * 2 ** (streak - 1));
+  const ms = RATE_LIMIT_BACKOFF_MS[Math.min(streak, RATE_LIMIT_BACKOFF_MS.length) - 1];
   cooling.set(id, Date.now() + ms);
   return ms;
 }
@@ -416,9 +416,10 @@ export async function handleGateway(req, res) {
 
     if (sessionRes.status === 429) {
       const ms = markRateLimited(account.id);
-      const mins = Math.round(ms / 60_000);
-      attempted.push({ account: label, ok: false, error: `429 限流，冷却 ${mins} 分钟` });
-      logger.info('TRAE-GW', '{label} 429 限流,冷却 {mins} 分钟(连续第 {streak} 次)', { label, mins, streak: coolingStreak.get(account.id) });
+      const dur = formatDurationMs(ms);
+      const streak = coolingStreak.get(account.id);
+      attempted.push({ account: label, ok: false, error: `429 限流，冷却 ${dur}` });
+      logger.info('TRAE-GW', '{label} 429 限流,冷却 {dur}(连续第 {streak} 次)', { label, dur, streak });
       continue;
     }
 
