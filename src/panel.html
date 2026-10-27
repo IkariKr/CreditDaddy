@@ -1493,7 +1493,19 @@ function initTheme() {
 // ── 状态 / 渲染 ──
 // 统一「领鸡蛋」语义：全部签到产品线 = 领取积分（workbuddy-intl 的「活跃」语义随活跃领取线删除）
 function statusOf(a) {
-  if (!CHECKIN_PRODUCTS.has(a.product)) return { cls: '', text: '', msg: '' };  // ZCode 无每日领取，不显示徽标
+  if (!CHECKIN_PRODUCTS.has(a.product)) {
+    // ZCode 无「每日签到」口径，但活动领取的结果必须落到徽标上：
+    // 否则卡片上唯一能证明「领到了」的东西只有额度数字，而活动额度常带
+    // effective_at（当天稍晚到账），在那之前卡片看起来毫无变化。
+    if (a.product === 'zcode') {
+      const r = a.lastResult;
+      const fresh = r && r.at && Date.now() - new Date(r.at).getTime() < 26 * 3600e3;
+      if (r && fresh && r.status === 'checked-in') return { cls: 'ok', text: T('已领取'), msg: r.message };
+      if (r && fresh && r.status === 'already') return { cls: 'ok', text: T('已领过'), msg: r.message };
+      if (r && fresh && r.status === 'failed') return { cls: 'fail', text: T('领取失败'), msg: r.message, err: true };
+    }
+    return { cls: '', text: '', msg: '' };
+  }
   if (a.provider === 'workbuddy-intl') return { cls: '', text: '', msg: '' };   // 国际版无签到动作（活跃领取线已删），不显示徽标
   const byProd = (state.status && state.status.todayByProduct) || {};
   const today = byProd[a.product] || (state.status && state.status.today);
@@ -3054,8 +3066,8 @@ function renderTenrouter() {
     + '<button class="btn" data-tr="refresh"' + (tr.loading ? ' disabled' : '') + '>' + (tr.loading ? T('刷新中…') : T('刷新额度')) + '</button>'
     + T('<button class="btn" data-tr="sync" title="用量同步：自动开关、同步来源与手动同步（点我打开）"') + (tr.syncing || c.syncing ? ' disabled' : '') + '>'
     + '<span class="dot' + (c.sync.enabled ? ' on' : '') + '"></span>' + (tr.syncing || c.syncing ? T('同步中…') : T('用量同步')) + '</button>'
-    + T('<button class="btn" data-tr="settings">设置</button>')
     + '<button class="btn" data-tr="account-manage" title="' + T('账号同步与网页会话 Cookie 捕获') + '">' + T('账号管理') + '</button>'
+    + T('<button class="btn" data-tr="settings">设置</button>')
     + '</div></div>'
     + tabStrip
     + '<div class="tr-grid">' + grid + '</div>';
@@ -3218,7 +3230,12 @@ async function syncAfterZcodeClaims() {
   seenZcodeTickAt = t.at;
   if (first || !(t.claimedIds && t.claimedIds.length)) return;   // 首次加载已全量拉取
   try { state.accounts = (await api('/api/accounts')).accounts; } catch (e) {}
-  loadQuotas(t.claimedIds);
+  await loadQuotas(t.claimedIds);
+  // 额度拿到后必须重绘：ZCode 活动发的额度常带 effective_at（如 23:00 到账），
+  // 卡片从「无有效套餐」变成「待生效 N Token · HH:MM 到账」，不重绘就一直停在旧样子，
+  // 用户以为「领取成功了却不显示」——只能自己手动点刷新。
+  render();
+  renderStatus();
   loadZGateway();
 }
 async function loadAccounts() {
@@ -3378,7 +3395,7 @@ async function onCardClick(e) {
     if ([...sel.options].some((o) => o.value === a.provider && !o.hidden)) sel.value = a.provider;
     return deviceLogin();
   }
-  if (act === 'quota') { loadQuotas([id], { live: true }); return; }
+  if (act === 'quota') { loadQuotas([id], { live: true }).then(render); return; }
   if (act === 'claim') return openClaim(id);
   if (act === 'switch') {
     const a = state.accounts.find((x) => x.id === id);
@@ -3643,7 +3660,8 @@ async function doClaim(i) {
     });
     toast(T('领取成功：') + (r.planName || pl.name || pl.planId));
     closeModal('m-claim');
-    loadQuotas([claimState.accountId]);
+    await loadStatus();          // 徽标（已领取）在账号的 lastResult 上，必须先重拉账号
+    await loadAccounts();        // loadQuotas 之后必须重绘，否则卡片停在旧样子
     loadLogs();
   } catch (e) {
     const errBox = $('claim-status');
