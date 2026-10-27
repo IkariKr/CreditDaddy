@@ -218,6 +218,7 @@
   "{kind} 登录失败:{err}": "{kind} 로그인 실패: {err}",
   "{label} {msg}": "{label} {msg}",
   "{label} 429 限流,冷却 5 分钟": "{label}: 429 속도 제한, 5분간 쿨다운",
+  "{label} 429 限流,冷却 {mins} 分钟(连续第 {streak} 次)": "{label} 속도 제한 (429), {mins}분 쿨링 (연속 {streak}회)",
   "{label} 补全成功 ({status})": "{label}: 완성 성공 ({status})",
   "{label} 补全成功 （{status}）": "{label}: 완성 성공 ({status})",
   "{label} 额度不足 ({status})": "{label} 할당량 부족 ({status})",

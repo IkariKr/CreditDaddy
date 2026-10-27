@@ -11,7 +11,8 @@
  *   → SSE / JSON 原样流式回传。
  *
  * 失败分类：3007/3012（验证码）→ 作废 token 重解重试；401（JWT 失效）→ 拉黑账号；
- * 402/额度不足 → 标记耗尽；429 → 冷却 5 分钟。全部失败返回 502 + 各账号结论。
+ * 402/额度不足 → 标记耗尽；429 → 冷却（连续 429 翻倍递增：5 → 10 → 20 分钟，封顶 30 分钟，
+ * 成功即清零）。全部失败返回 502 + 各账号结论。
  *
  * 仅限本机回路使用：daemon 只绑 127.0.0.1，网关不做鉴权（跨机场景需要先给
  * daemon 加绑定/密钥，见 README）。NAS/纯 CLI 环境没有验证码提供者，网关开不了。
@@ -46,6 +47,9 @@ import { t } from './i18n.js';
 const PLAN_MESSAGES_URL = 'https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages';
 const CAPTCHA_CACHE_TTL_MS = 30_000;
 const ACCOUNT_COOLING_MS = 5 * 60_000;
+// 同一账号连续 429 时冷却翻倍（5 → 10 → 20 分钟，封顶 30 分钟），避免对限流中的号反复空打；
+// 成功一次即清零计数，所以「偶尔撞一次 429」不会累积。见 markCooling。
+const ACCOUNT_COOLING_MAX_MS = 30 * 60_000;
 const MAX_ATTEMPTS = 6;
 // 上游补全墙钟上限（响应头到齐后 body 仍可流式跑这么久）
 const UPSTREAM_TIMEOUT_MS = 600_000;
@@ -67,6 +71,7 @@ export async function setGatewayEnabled(v) {
   if (on) {
     dead.clear();
     cooling.clear();
+    coolingStreak.clear();
   }
 }
 
@@ -74,6 +79,8 @@ export async function setGatewayEnabled(v) {
 
 let rrIndex = 0;
 const cooling = new Map();  // accountId → 冷却截止(ms)
+// accountId → 连续 429 次数（成功即清零）：决定本次 429 的冷却时长（翻倍递增）
+const coolingStreak = new Map();
 const dead = new Map();     // accountId → 拉黑时的凭据指纹（指纹变化 = 已重新登录导入，自动复活）
 // 会话粘滞（用户选 A）：sessionId → { accountId, at }。同一段对话的多轮固定用同一个号，
 // TTL 到期让位给轮转，避免冷会话长期占号。声明放这里是因为 __resetForTests 要清它。
@@ -81,10 +88,33 @@ const sessionSticky = new Map();
 
 function markCooling(id, ms = ACCOUNT_COOLING_MS) { cooling.set(id, Date.now() + ms); }
 
+/**
+ * 429 限流：按连续次数翻倍冷却（5 → 10 → 20 → 30 分钟封顶）。
+ * 上游的 429 通常带限流窗口，固定 5 分钟会一直撞在窗口里；翻倍能更快退出限流状态。
+ * 成功时 resetCoolingStreak 清零，所以偶发 429 不会累积。
+ */
+function markRateLimited(id) {
+  const streak = (coolingStreak.get(id) || 0) + 1;
+  coolingStreak.set(id, streak);
+  const ms = Math.min(ACCOUNT_COOLING_MAX_MS, ACCOUNT_COOLING_MS * 2 ** (streak - 1));
+  cooling.set(id, Date.now() + ms);
+  return ms;
+}
+
+/** 账号补全成功：清零连续 429 计数（下次 429 重新从 5 分钟起算） */
+function resetCoolingStreak(id) { coolingStreak.delete(id); }
+
+/**
+ * 测试专用：把某账号的冷却截止拨到指定时间戳（0 = 立即到期，用于快进冷却窗口）。
+ * 生产不走这里——冷却窗口只能自然到期。
+ */
+export function __setCoolingForTests(accountId, untilMs) { cooling.set(accountId, untilMs); }
+
 /** 测试专用：清空进程内轮换/冷却/拉黑/验证码缓存/统计状态 */
 export function __resetForTests() {
   rrIndex = 0;
   cooling.clear();
+  coolingStreak.clear();
   dead.clear();
   quotaCache.clear();
   sessionSticky.clear();
@@ -114,6 +144,7 @@ function isDead(account) {
   if (fp === credFingerprint(account)) return true;
   dead.delete(account.id);
   cooling.delete(account.id);
+  coolingStreak.delete(account.id);
   logger.info('ZCODE-GW', '{label} 凭据已更新,解除拉黑', { label: account.name || account.uid || account.id });
   return false;
 }
@@ -216,6 +247,7 @@ async function persistMark(accountId, entry) {
 export async function clearQuotaMark(accountId) {
   quotaCache.delete(accountId);
   if (!dead.has(accountId)) cooling.delete(accountId);
+  resetCoolingStreak(accountId);   // 领到新额度 = 状态已恢复，429 计数重新从 5 分钟起算
   try {
     await withState((st) => {
       if (st?.zcodeGatewayExhausted?.[accountId]) delete st.zcodeGatewayExhausted[accountId];
@@ -616,6 +648,7 @@ export async function handleGateway(req, res) {
         logger.debug('ZCODE-GW', '{label} 补全成功 ({status})', { label, status: upstream.status });
         stats.lastAccount = label;
         cooling.delete(account.id);
+        resetCoolingStreak(account.id);
         touchSticky(sessionId, account.id);   // 会话粘住这个号，后续轮不再跳
         res.writeHead(upstream.status, { 'Content-Type': ct || 'application/json', 'Cache-Control': 'no-cache' });
         res.end(text);
@@ -624,6 +657,7 @@ export async function handleGateway(req, res) {
       logger.debug('ZCODE-GW', '{label} 补全成功 ({status})', { label, status: upstream.status });
       stats.lastAccount = label;
       cooling.delete(account.id);
+      resetCoolingStreak(account.id);
       touchSticky(sessionId, account.id);   // 会话粘住这个号，后续轮不再跳
       // 注意：undici 已自动解压上游 gzip——body 是明文，绝不能再带 content-encoding 头
       // （带着会让客户端对明文做 gunzip → 乱码）
@@ -674,9 +708,10 @@ export async function handleGateway(req, res) {
       continue;
     }
     if (upstream.status === 429) {
-      markCooling(account.id);
-      attempted.push({ account: label, ok: false, error: '429 限流，冷却 5 分钟' });
-      logger.debug('ZCODE-GW', '{label} 429 限流,冷却 5 分钟', { label });
+      const ms = markRateLimited(account.id);
+      const mins = Math.round(ms / 60_000);
+      attempted.push({ account: label, ok: false, error: `429 限流，冷却 ${mins} 分钟` });
+      logger.debug('ZCODE-GW', '{label} 429 限流,冷却 {mins} 分钟(连续第 {streak} 次)', { label, mins, streak: coolingStreak.get(account.id) });
       continue;
     }
     // 其他错误：友好化展示 + 原样透传给客户端
@@ -722,7 +757,10 @@ export async function gatewayStatus() {
     accountsWithJwt: withJwt,
     // 会话粘滞：当前有多少段会话各自钉在一个号上（面板「接口使用中」徽标据此说明）
     stickySessions: sessionSticky.size,
+    // cooling 保持字符串数组（历史形状，测试与面板按名字读）；冷却细节走 coolingDetail
     cooling: all.filter((a) => !isDead(a) && (cooling.get(a.id) || 0) > now).map((a) => a.name || a.uid || a.id),
+    coolingDetail: all.filter((a) => !isDead(a) && (cooling.get(a.id) || 0) > now)
+      .map((a) => ({ id: a.id, name: a.name || a.uid || a.id, minutes: Math.max(1, Math.round(((cooling.get(a.id) || 0) - now) / 60_000)), streak: coolingStreak.get(a.id) || 0 })),
     dead: all.filter((a) => isDead(a)).map((a) => a.name || a.uid || a.id),
     endpoint: '/gateway/zcode/v1/messages',
     note: hasCaptcha ? null : '需要桌面版 CreditDaddy（隐藏窗口验证码），纯 CLI / NAS 环境不可用',

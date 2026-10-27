@@ -287,6 +287,64 @@ test('401 拉黑 / 额度与 429 跳过 / 最终成功', async () => {
   assert.match(rows[2].headers.Authorization, /^Bearer jwt-good-/);
 });
 
+test('连续 429 → 冷却翻倍递增（5 → 10 → 20 分钟，封顶 30），成功一次即清零', async () => {
+  await resetState();
+  zauto.setZcodeCaptchaProvider(null);
+  await seedAccount('rl', '限流号');
+
+  // 第 1 次 429：5 分钟
+  upstreamQueue.push({ status: 429, body: '{"error":{"code":"429"}}' });
+  await gw.handleGateway(fakeReq('POST', '{}'), captureRes());
+  let st = await gw.gatewayStatus();
+  assert.equal(st.coolingDetail[0].minutes, 5, '首次 429 冷却 5 分钟');
+  assert.equal(st.coolingDetail[0].streak, 1);
+
+  // 把冷却截止拨回过去（模拟 5 分钟已过），再吃一次 429 → 翻倍到 10 分钟
+  gw.__setCoolingForTests('rl', 0);
+  upstreamQueue.push({ status: 429, body: '{"error":{"code":"429"}}' });
+  await gw.handleGateway(fakeReq('POST', '{}'), captureRes());
+  st = await gw.gatewayStatus();
+  assert.equal(st.coolingDetail[0].minutes, 10, '连续第 2 次 429 冷却翻倍到 10 分钟');
+  assert.equal(st.coolingDetail[0].streak, 2);
+
+  // 第 3 次 → 20 分钟
+  gw.__setCoolingForTests('rl', 0);
+  upstreamQueue.push({ status: 429, body: '{"error":{"code":"429"}}' });
+  await gw.handleGateway(fakeReq('POST', '{}'), captureRes());
+  st = await gw.gatewayStatus();
+  assert.equal(st.coolingDetail[0].minutes, 20, '连续第 3 次 429 冷却 20 分钟');
+
+  // 第 4 次 → 封顶 30 分钟（不再涨）
+  gw.__setCoolingForTests('rl', 0);
+  upstreamQueue.push({ status: 429, body: '{"error":{"code":"429"}}' });
+  await gw.handleGateway(fakeReq('POST', '{}'), captureRes());
+  st = await gw.gatewayStatus();
+  assert.equal(st.coolingDetail[0].minutes, 30, '连续第 4 次 429 封顶 30 分钟');
+
+  gw.__setCoolingForTests('rl', 0);
+  upstreamQueue.push({ status: 429, body: '{"error":{"code":"429"}}' });
+  await gw.handleGateway(fakeReq('POST', '{}'), captureRes());
+  st = await gw.gatewayStatus();
+  assert.equal(st.coolingDetail[0].minutes, 30, '第 5 次仍是 30 分钟封顶');
+
+  // 成功一次 → 计数清零，下次 429 回到 5 分钟
+  gw.__setCoolingForTests('rl', 0);
+  upstreamQueue.push({ status: 200, sse: true, body: sseBody() });
+  const res = captureRes();
+  await gw.handleGateway(fakeReq('POST', '{}'), res);
+  assert.equal(res.status, 200, '冷却到期后应能补全成功');
+  st = await gw.gatewayStatus();
+  assert.equal(st.coolingDetail.length, 0, '成功后应解除冷却');
+  assert.equal(st.coolingDetail[0]?.streak, undefined);
+
+  gw.__setCoolingForTests('rl', 0);
+  upstreamQueue.push({ status: 429, body: '{"error":{"code":"429"}}' });
+  await gw.handleGateway(fakeReq('POST', '{}'), captureRes());
+  st = await gw.gatewayStatus();
+  assert.equal(st.coolingDetail[0].minutes, 5, '成功清零后，再次 429 回到 5 分钟');
+  assert.equal(st.coolingDetail[0].streak, 1);
+});
+
 test('拉黑后重新登录导入（JWT 变化）→ 自动复活，网关恢复', async () => {
   await resetState();
   zauto.setZcodeCaptchaProvider(null);

@@ -218,6 +218,7 @@
   "{kind} 登录失败:{err}": "{kind} 登錄失敗:{err}",
   "{label} {msg}": "{label} {msg}",
   "{label} 429 限流,冷却 5 分钟": "{label} 429 限流,冷卻 5 分鐘",
+  "{label} 429 限流,冷却 {mins} 分钟(连续第 {streak} 次)": "{label} 429 限流,冷卻 {mins} 分鐘(連續第 {streak} 次)",
   "{label} 补全成功 ({status})": "{label} 補全成功 ({status})",
   "{label} 补全成功 （{status}）": "{label} 補全成功 ({status})",
   "{label} 额度不足 ({status})": "{label} 額度不足 ({status})",

@@ -7,7 +7,8 @@
  * 架构特性：
  * 1. 账号多路轮换（provider=trae）：自动在有效账号间按剩余积分加权轮询（SWRR）
  * 2. 凭据热对齐：401 时若为本机导入账号，尝试重读 storage.json 最新登录态
- * 3. 429 限流保护：429 限流自动冷却 5 分钟
+ * 3. 429 限流保护：429 限流自动冷却（连续 429 翻倍递增：5 → 10 → 20 分钟，封顶 30 分钟，
+ *    成功一次即清零）
  * 4. 局域网访问控制：继承相同的白名单与回环检查机制
  * 5. SSE 增量转换：将 Trae SOLO 累积流转换为标准 Anthropic 流式 SSE 或一次性 JSON 响应
  */
@@ -21,6 +22,8 @@ import { t } from './i18n.js';
 
 const TRAE_SOLO_BASE = 'https://solo.trae.cn/api/remote/v1';
 const ACCOUNT_COOLING_MS = 5 * 60_000;
+// 连续 429 冷却翻倍（5 → 10 → 20，封顶 30 分钟），成功即清零。见 zcodeGateway 同款实现。
+const ACCOUNT_COOLING_MAX_MS = 30 * 60_000;
 const MAX_ATTEMPTS = 5;
 const UPSTREAM_TIMEOUT_MS = 600_000;
 const UPSTREAM_CONNECT_MS = 15_000;
@@ -38,12 +41,15 @@ export async function setGatewayEnabled(v) {
   if (on) {
     dead.clear();
     cooling.clear();
+    coolingStreak.clear();
   }
 }
 
 // ── 账号轮换状态（进程内） ──
 
 const cooling = new Map();  // accountId → 冷却截止(ms)
+// accountId → 连续 429 次数（成功即清零）：决定本次 429 的冷却时长（翻倍递增）
+const coolingStreak = new Map();
 const dead = new Map();     // accountId → 拉黑时的凭据指纹（指纹变化 = 已重新授权/导入，自动复活）
 const weights = new Map();  // accountId → { w: 剩余积分权重, at: 查询时刻 }
 const WEIGHT_TTL_MS = 10 * 60_000;  // 超过 10 分钟重查额度，让积分变化反映到分流上
@@ -64,6 +70,16 @@ function markCooling(id, ms = ACCOUNT_COOLING_MS) {
   cooling.set(id, Date.now() + ms);
 }
 
+function markRateLimited(id) {
+  const streak = (coolingStreak.get(id) || 0) + 1;
+  coolingStreak.set(id, streak);
+  const ms = Math.min(ACCOUNT_COOLING_MAX_MS, ACCOUNT_COOLING_MS * 2 ** (streak - 1));
+  cooling.set(id, Date.now() + ms);
+  return ms;
+}
+
+function resetCoolingStreak(id) { coolingStreak.delete(id); }
+
 function markDead(account) {
   dead.set(account.id, credFingerprint(account));
   cooling.set(account.id, Number.MAX_SAFE_INTEGER);
@@ -75,12 +91,14 @@ function isDead(account) {
   if (fp === credFingerprint(account)) return true;
   dead.delete(account.id);
   cooling.delete(account.id);
+  coolingStreak.delete(account.id);
   logger.info('TRAE-GW', '{label} 凭据已更新,解除拉黑', { label: account.name || account.uid || account.id });
   return false;
 }
 
 export function __resetForTests() {
   cooling.clear();
+  coolingStreak.clear();
   dead.clear();
   weights.clear();
   swrr.clear();
@@ -397,9 +415,10 @@ export async function handleGateway(req, res) {
     }
 
     if (sessionRes.status === 429) {
-      markCooling(account.id, ACCOUNT_COOLING_MS);
-      attempted.push({ account: label, ok: false, error: '429 限流，冷却 5 分钟' });
-      logger.info('TRAE-GW', '{label} 429 限流,冷却 5 分钟', { label });
+      const ms = markRateLimited(account.id);
+      const mins = Math.round(ms / 60_000);
+      attempted.push({ account: label, ok: false, error: `429 限流，冷却 ${mins} 分钟` });
+      logger.info('TRAE-GW', '{label} 429 限流,冷却 {mins} 分钟(连续第 {streak} 次)', { label, mins, streak: coolingStreak.get(account.id) });
       continue;
     }
 
@@ -451,6 +470,7 @@ export async function handleGateway(req, res) {
     }
 
     stats.lastAccount = label;
+      resetCoolingStreak(account.id);   // 成功一次即清零连续 429 计数
       logger.debug('TRAE-GW', '{label} 连接成功,开始流式输出 ({model})', { label, model: requestedModel });
 
     // 成功建立流，按 isStream 分发

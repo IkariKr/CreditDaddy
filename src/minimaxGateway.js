@@ -7,7 +7,8 @@
  * 架构特性：
  * 1. 多账号粘性主力（provider=minimax）：按剩余积分选主力并保持，出错/限流/凭据失效自动切下一个
  * 2. 自动刷新与重试：401 凭据失效时自动走 OAuth refresh 换取新 token 并重试，彻底失效才拉黑
- * 3. 429 限流保护：429 限流自动冷却 5 分钟
+ * 3. 429 限流保护：429 限流自动冷却（连续 429 翻倍递增：5 → 10 → 20 分钟，封顶 30 分钟，
+ *    成功一次即清零）
  * 4. 局域网访问控制：继承相同的白名单与回环检查机制
  * 5. SSE 与 JSON 流式透明转发
  */
@@ -40,6 +41,7 @@ export async function setGatewayEnabled(v) {
   if (on) {
     dead.clear();
     cooling.clear();
+    coolingStreak.clear();
     clearRefreshDead();
   }
 }
@@ -47,6 +49,8 @@ export async function setGatewayEnabled(v) {
 // ── 账号轮换状态（进程内） ──
 
 const cooling = new Map();  // accountId → 冷却截止(ms)
+// accountId → 连续 429 次数（成功即清零）：决定本次 429 的冷却时长（翻倍递增）
+const coolingStreak = new Map();
 const dead = new Map();     // accountId → 拉黑时的凭据指纹（指纹变化 = 已重新授权/刷新，自动复活）
 const weights = new Map();  // accountId → { w: 剩余积分权重, at: 查询时刻 }(查询失败时保留旧快照)
 const WEIGHT_TTL_MS = 10 * 60_000;  // 权重超过该时长重新查询额度,让用量变化能反映到分流上
@@ -69,6 +73,19 @@ function markCooling(id, ms = ACCOUNT_COOLING_MS) {
   cooling.set(id, Date.now() + ms);
 }
 
+// 连续 429 冷却翻倍（5 → 10 → 20，封顶 30 分钟）；成功一次即清零。见 zcodeGateway 同款实现。
+const ACCOUNT_COOLING_MAX_MS = 30 * 60_000;
+
+function markRateLimited(id) {
+  const streak = (coolingStreak.get(id) || 0) + 1;
+  coolingStreak.set(id, streak);
+  const ms = Math.min(ACCOUNT_COOLING_MAX_MS, ACCOUNT_COOLING_MS * 2 ** (streak - 1));
+  cooling.set(id, Date.now() + ms);
+  return ms;
+}
+
+function resetCoolingStreak(id) { coolingStreak.delete(id); }
+
 function markDead(account) {
   dead.set(account.id, credFingerprint(account));
   cooling.set(account.id, Number.MAX_SAFE_INTEGER);
@@ -84,6 +101,7 @@ function isDead(account) {
   if (fp === credFingerprint(account)) return true;
   dead.delete(account.id);
   cooling.delete(account.id);
+  coolingStreak.delete(account.id);
   logger.info('MINIMAX-GW', '{label} 凭据已更新,解除拉黑', { label: account.name || account.uid || account.id });
   return false;
 }
@@ -94,6 +112,7 @@ export function __expireWeightsForTests() { weights.clear(); }
 /** 测试专用：清空进程内状态 */
 export function __resetForTests() {
   cooling.clear();
+  coolingStreak.clear();
   dead.clear();
   weights.clear();
   stickyId = null;
@@ -310,6 +329,7 @@ export async function handleGateway(req, res) {
           // 刷新回写即凭据更新：解除该账号可能存在的拉黑/冷却（指纹已变化，防御性直清）
           dead.delete(account.id);
           cooling.delete(account.id);
+          resetCoolingStreak(account.id);
           upstream = await sendUpstream(activeToken);
         } catch (refErr) {
           logger.warn('MINIMAX-GW', '{label} 凭据刷新失败: {err}', { label, err: refErr.message });
@@ -323,6 +343,7 @@ export async function handleGateway(req, res) {
 
     if (upstream.ok) {
       stats.lastAccount = label;
+      resetCoolingStreak(account.id);   // 成功一次即清零连续 429 计数
       logger.info('MINIMAX-GW', '{label} 补全成功 ({status})', { label, status: upstream.status });
       try {
         const meta = JSON.parse(rawBody);
@@ -375,9 +396,10 @@ export async function handleGateway(req, res) {
       continue;
     }
     if (upstream.status === 429) {
-      markCooling(account.id, ACCOUNT_COOLING_MS);
-      attempted.push({ account: label, ok: false, error: '429 限流，冷却 5 分钟' });
-      logger.info('MINIMAX-GW', '{label} 429 限流,冷却 5 分钟', { label });
+      const ms = markRateLimited(account.id);
+      const mins = Math.round(ms / 60_000);
+      attempted.push({ account: label, ok: false, error: `429 限流，冷却 ${mins} 分钟` });
+      logger.info('MINIMAX-GW', '{label} 429 限流,冷却 {mins} 分钟(连续第 {streak} 次)', { label, mins, streak: coolingStreak.get(account.id) });
       continue;
     }
 
