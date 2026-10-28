@@ -1260,6 +1260,21 @@ function promptKey(invalid) {
   }
   return keyPrompt;
 }
+// 自动适配反向代理/统一网关子路径（例如 fnOS 统一网关 /app/creditdaddy/）：
+// 当页面在子路径下渲染时，自动给 /api/* 等绝对路径补齐前缀，避免越过前缀直接请求根路径返回 404
+const apiPrefix = (() => {
+  const p = (typeof window !== 'undefined' && window.location && window.location.pathname) || '';
+  const dir = p.replace(/\/[^/]*\.[^/]+$/, '');
+  const clean = dir.replace(/\/+$/, '');
+  return clean && clean !== '/' ? clean : '';
+})();
+function resolveApiPath(url) {
+  if (typeof url !== 'string' || !url.startsWith('/')) return url;
+  if (apiPrefix && !url.startsWith(apiPrefix + '/')) {
+    return apiPrefix + url;
+  }
+  return url;
+}
 async function api(p, opts = {}, attempt = 0) {
   const o = Object.assign({}, opts, { headers: Object.assign({}, opts.headers, { 'x-qd-key': getKey() }) });
   if (opts.json !== undefined) {
@@ -1268,7 +1283,7 @@ async function api(p, opts = {}, attempt = 0) {
     o.body = JSON.stringify(opts.json);
   }
   delete o.json;
-  const res = await fetch(p, o);
+  const res = await fetch(resolveApiPath(p), o);
   const data = await res.json().catch(() => ({}));
   // 密码缺失 / 不正确：弹框要密码，输入后自动重试这次请求（不再只报一句错误）
   if (res.status === 401 && data.code === 'PANEL_KEY' && attempt < 3) {
@@ -3299,22 +3314,23 @@ $('tr-disconnect').onclick = trDisconnect;
 // ── 数据加载 ──
 async function loadStatus() {
   try { state.status = await api('/api/status'); renderStatus(); } catch (e) {}
-  syncAfterZcodeClaims();
+  await syncAfterZcodeClaims();
 }
 // 后台自动领取成功后，立即刷新这些账号的额度与卡片（不必等 2 分钟一轮的余额刷新）
 let seenZcodeTickAt = null;
 async function syncAfterZcodeClaims() {
   const z = state.status && state.status.scheduler && state.status.scheduler.zcode;
   const t = z && z.lastTick;
-  if (!t || t.at === seenZcodeTickAt) return;
-  const first = seenZcodeTickAt === null;
+  if (!t || !t.at || t.at === seenZcodeTickAt) return;
+  const isInit = seenZcodeTickAt === null;
   seenZcodeTickAt = t.at;
-  if (first || !(t.claimedIds && t.claimedIds.length)) return;   // 首次加载已全量拉取
+  // 避免首屏重复重刷：只有当进入页面时该轮领取已是 2 分钟前的陈旧历史才跳过（首屏 boot 已有全量覆盖）；
+  // 若是刚发生不久的领取，无论是否初次判定都必须立即刷新！
+  if (isInit && (Date.now() - new Date(t.at).getTime() > 120_000)) return;
+  if (!t.claimedIds || !t.claimedIds.length) return;
   try { state.accounts = (await api('/api/accounts')).accounts; } catch (e) {}
-  await loadQuotas(t.claimedIds);
-  // 额度拿到后必须重绘：ZCode 活动发的额度常带 effective_at（如 23:00 到账），
-  // 卡片从「无有效套餐」变成「待生效 N Token · HH:MM 到账」，不重绘就一直停在旧样子，
-  // 用户以为「领取成功了却不显示」——只能自己手动点刷新。
+  // 必须带 live: true，与手动点击「刷新积分」动作完全一致，真探上游重算待生效活动权益
+  await loadQuotas(t.claimedIds, { live: true });
   render();
   renderStatus();
   loadZGateway();
@@ -3814,7 +3830,7 @@ async function restartCreditDaddy() {
   const poll = setInterval(async () => {
     attempts++;
     try {
-      const res = await fetch('/api/status', { cache: 'no-store' });
+      const res = await fetch(resolveApiPath('/api/status'), { cache: 'no-store' });
       if (res.ok) {
         clearInterval(poll);
         location.reload();
