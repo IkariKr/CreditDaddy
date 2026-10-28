@@ -7,8 +7,27 @@
 ## [Unreleased]
 
 - 【已排期·双侧】MiniMax 签到徽章 10Router 消费侧（10R#77）：external-quota 白名单放行 `checkinToday` / `streakDays` + 卡面「今日已签」徽章；CD 出口已随 1.6.0 发出。
-- 【随下版发出】Trae 自动签到修复（issue #38，#31 根因）：签到设备号优先用登录时注册的真机号（`meta.deviceId`），派生号被服务端风控拒 9074 的问题根治；9074 重试仍轮换派生号。已在测试包验证。
-- 【随下版发出】fnOS 统一网关入口（issue #39 方案 2）：fpk 桌面/APP 窗口改走 fnOS 网关（`gatewaySocket` + 前缀 `/app/creditdaddy`），公网 HTTPS / Tunnel 打开面板不再白屏（443 直达、同源、免配置）；`gateway-proxy.mjs` 流式透传 SSE，直连 47860 旧路径不受影响。
+
+---
+
+## [1.6.3] (2026-10-28，测试包)
+
+本版主题:**Trae 自动签到修复（issue #38，设备号优先用登录时注册的真机号）+ fnOS 统一网关入口（issue #39，公网 HTTPS / Tunnel 打开面板不再白屏）**。
+Theme: Trae auto check-in fix (#38, prefer the device id registered at login) + fnOS unified-gateway entry (#39, public HTTPS / Tunnel access no longer blank).
+
+> **发布状态**：本版内容已随测试包分发（飞书群，飞书群文件 `CreditDaddy-Win-Setup-1.6.3.exe`）；**正式发版（GitHub Release / npm)待定**——tag 与误发的 npm 包已回收（npm 1.6.3 挂 deprecation，正式发版仍用 1.6.3，发布时自动清除该标记）。
+
+### 🔧 修复
+
+- **Trae 自动签到每天 9074 失败（issue #38，#31 的真正根因）**：签到用的 `x-device-id` 此前按 uid **确定性派生**，但服务端会把「账号-设备」绑在**登录时注册的那台**上——派生的陌生设备号从导入第二天起被风控持续拒绝（「当前参与用户太多，请稍后再试」），重试轮换其它派生号也全拒；同一时刻在官方客户端手动签到正常。导入首日能成功是风控学习窗口，之后每天失败。现签到设备号**优先原样使用导入时从客户端 `storage.json` 抓到的真机号**（`meta.deviceId`）；无真机号（纯 token 导入）或 9074 重试时才回落派生号轮流尝试，多账号同机时首账号用真机号、其余派生互不抢占。升级后次日起自动签到应恢复正常；若首日仍见 9074 属风控放行窗口，官方客户端手动签一次即可。
+
+### ✨ 新功能
+
+- **fnOS 桌面/APP 走统一网关入口（issue #39，方案 2）**：从公网域名（反向代理 / Cloudflare Tunnel 等 HTTPS 入口）打开 fnOS 桌面图标或飞牛手机 APP 时白屏——窗口按「当前访问主机名」拼 `http://域名:47860`，而 HTTPS 入口只服务 443，该地址不可达（内网 LAN 一切正常）。现 fpk 改走 **fnOS 统一网关**：`ui/config` 的窗口声明 `gatewaySocket`（app.sock）与前缀 `/app/creditdaddy`，manifest 声明 `micro_app`，新增 `gateway-proxy.mjs`（Node 零依赖）把网关转来的请求剥前缀、改写 Host/Origin/Referer 后转发本机 47860——**公网 443 直达，与页面同源，无需用户任何配置**；Anthropic SSE 长流（/gateway/*）流式透传。直连 `http://LAN_IP:47860` 的旧路径完全不受影响；反代代理起不来也不挡主服务。已验证：前缀剥离 / Host+Origin 改写 / SSE 完整流 / POST body 原样（冒烟脚本三路全过）。
+
+### 🌐 其它
+
+- 网页会话站点 label 与产品描述补齐「豆包」；CHANGELOG.en 补 1.6.1 / 1.6.2 英文段（英文面板「更新日志」直接显示英文）。
 
 ---
 
