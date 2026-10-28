@@ -53,8 +53,24 @@ function seeded(uid, salt, n) {
 }
 
 export function traeDevice(uid, storedDeviceId, attempt = 0) {
-  // attempt 参数：9074 重试时轮换派生设备号（issue #31 报告者实测——派生号被服务端一律拒 9074、
-  // 同一时刻真机号可领，说明服务端大概率只认登录时注册的设备号，换号重试才有机会过）。
+  // 首选**登录时注册的真机号**（meta.deviceId，本机导入时从 storage.json 抓的）：
+  // 服务端大概率把「号-设备」绑在登录时注册的那台上——陌生设备号打接口吃 9074
+  //（issue #31 报告者实测派生号一律被拒、同一时刻真机号可领；本机实测同现象：
+  // 导入首日派生号签到成功，之后每天 9074，重试换派生号 3 轮也全拒）。
+  // attempt>0 才走派生：多账号同机时真机号只有一个，第二个账号起服务端按设备限
+  // 每日一领会拒（issue #28，TraeTools 的「设备码切换」本质就是给每号换独立设备码），
+  // 此时轮换派生号，至少有一个号能落在服务端风控放行的窗口里。
+  if (attempt === 0 && storedDeviceId && /^\d{8,}$/.test(String(storedDeviceId))) {
+    const m = seeded(`${uid}`, 'market:0', 16);
+    m[6] = (m[6] & 0x0f) | 0x40;
+    m[8] = (m[8] & 0x3f) | 0x80;
+    const h = m.map((b) => b.toString(16).padStart(2, '0')).join('');
+    return {
+      deviceId: String(storedDeviceId),
+      marketUserId: `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`,
+      sessionId: seeded(uid, 'sess', 32).map((b) => b.toString(16).padStart(2, '0')).join(''),
+    };
+  }
   // attempt=0 为默认指纹（跨天稳定恒定）；attempt>0 派生结果互异但同样确定（同 attempt 重放一致）。
   const d = seeded(`${uid}`, `devid:${attempt}`, 15).map((b) => String(48 + (b % 10)));
   const m = seeded(`${uid}`, `market:${attempt}`, 16);
@@ -62,9 +78,6 @@ export function traeDevice(uid, storedDeviceId, attempt = 0) {
   m[8] = (m[8] & 0x3f) | 0x80;
   const h = m.map((b) => b.toString(16).padStart(2, '0')).join('');
   return {
-    // x-device-id 按 uid 派生（每号独立且稳定）：本机导入的 N 个账号若共用客户端自报的
-    // 同一设备号，服务端按设备限每日一领——第二个账号起签到必吃 9074（issue #28，
-    // TraeTools 的「设备码切换」本质就是给每个账号换独立设备码）。这里不落 storedDeviceId。
     deviceId: d.join(''),
     marketUserId: `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`,
     sessionId: seeded(uid, 'sess', 32).map((b) => b.toString(16).padStart(2, '0')).join(''),

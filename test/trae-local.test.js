@@ -46,23 +46,45 @@ test('tc 信封：magic 不符 / 完整性被破坏 / 非 base64 都返回 null 
   assert.equal(tcDecrypt(raw.toString('base64')), null);
 });
 
-test('traeDevice：x-device-id 必须是纯数字（GUID 会触发风控 code 9074），且按 uid 稳定', () => {
+test('traeDevice：真机号优先（登录时注册的设备号）——attempt=0 用 meta.deviceId', () => {
+  // 本机实测（2026-10-28）：导入首日派生号签到成功，之后每天 9074、换派生号重试 3 轮全拒——
+  // 服务端把「号-设备」绑在登录时注册的那台上，陌生设备号打接口吃 9074。
   const a = traeDevice('7000000000000001', '9001000000000001');
-  assert.match(a.deviceId, /^\d{8,}$/);
+  assert.equal(a.deviceId, '9001000000000001', '有真机号时必须原样使用');
   assert.match(a.marketUserId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.equal(a.sessionId, traeDevice('7000000000000001', '9001000000000001').sessionId, '同一 uid 指纹恒定');
   assert.notEqual(a.sessionId, traeDevice('9999999999999999', '9001000000000001').sessionId, '不同 uid 指纹不同');
+  // 无真机号（token 导入 /字段缺失）回落派生号
+  const b = traeDevice('7000000000000001', null);
+  assert.match(b.deviceId, /^\d{8,}$/);
+  // 真机号格式不合规（非纯数字）也回落派生
+  const c = traeDevice('7000000000000001', 'not-a-number');
+  assert.match(c.deviceId, /^\d{8,}$/);
+  assert.notEqual(c.deviceId, 'not-a-number');
 });
 
-test('traeDevice：多账号每号独立设备码（issue #28）——客户端自报值不再共用', () => {
+test('traeDevice：9074 重试（attempt>0）轮换派生号——不粘在真机号上重复撞', () => {
+  // attempt>0 走派生：真机号已被服务端标记时，换号才有机会落在放行窗口
+  const a0 = traeDevice('7000000000000001', '9001000000000001', 0);
+  const a1 = traeDevice('7000000000000001', '9001000000000001', 1);
+  assert.equal(a0.deviceId, '9001000000000001', 'attempt=0 用真机号');
+  assert.notEqual(a1.deviceId, '9001000000000001', 'attempt=1 换派生号');
+  assert.match(a1.deviceId, /^\d{8,}$/);
+  assert.equal(traeDevice('7000000000000001', '9001000000000001', 1).deviceId, a1.deviceId, '同 attempt 重放一致');
+});
+
+test('traeDevice：多账号每号独立设备码（issue #28）——第二个账号起派生，不共用真机号', () => {
   // 本机导入的 N 个账号 meta.deviceId 全同（同一台物理客户端）：
-  // 若沿用 stored 值，服务端按设备限每日一领，第二个账号起必吃 9074
+  // 服务端按设备限每日一领，第二账号起用同真机号必吃 9074——
+  // 首账号用真机号（attempt=0 优先 stored），其余账号签到时应传 attempt>0 派生，
+  // 或无 stored 时各自按 uid 派生；同 uid 恒定不变。
   const stored = '9001000000000001';   // 同一台客户端自报的设备号
-  const ids = ['7000000000000001', '7000000000000002', '7000000000000003'].map((uid) => traeDevice(uid, stored).deviceId);
+  // 无 stored 的多账号（token 导入形态）：各自按 uid 派生，互不相同
+  const ids = ['7000000000000001', '7000000000000002', '7000000000000003'].map((uid) => traeDevice(uid, null).deviceId);
   assert.equal(new Set(ids).size, ids.length, '不同 uid 必须派生出不同 device-id');
   for (const id of ids) assert.match(id, /^\d{8,}$/);
   // 稳定性：同一 uid 反复取值恒定（服务端看到的是「每号一台固定设备」）
-  assert.equal(traeDevice('7000000000000001', stored).deviceId, ids[0]);
+  assert.equal(traeDevice('7000000000000001', null).deviceId, ids[0]);
 });
 
 test('traeDevice：attempt 轮换（issue #31）——9074 重试换设备号，同 attempt 恒定', () => {
