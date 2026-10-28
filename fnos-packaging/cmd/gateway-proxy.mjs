@@ -68,9 +68,34 @@ const server = http.createServer((req, res) => {
   const upstream = http.request(
     { host: BACKEND_HOST === '0.0.0.0' ? '127.0.0.1' : BACKEND_HOST, port: BACKEND_PORT, path: p, method: req.method, headers },
     (up) => {
-      // 流式透传（SSE / chunked 关键路径）：状态行 + 头原样，body 逐 chunk 回写
-      res.writeHead(up.statusCode || 502, up.headers);
-      up.pipe(res, { end: true });
+      const ct = (up.headers['content-type'] || '').toLowerCase();
+      // 当响应为 HTML 时，重写内部绝对路径为网关前缀（参照 dsh-dashboard 做法），
+      // 彻底解决 fnOS iframe 桌面窗口内请求 /api/* 丢前缀导致 404 的问题
+      if (ct.includes('text/html') && GATEWAY_PREFIX) {
+        const chunks = [];
+        up.on('data', (c) => chunks.push(c));
+        up.on('end', () => {
+          let text = Buffer.concat(chunks).toString('utf8');
+          text = text.replaceAll('"/api/', `"${GATEWAY_PREFIX}/api/`);
+          text = text.replaceAll("'/api/", `'${GATEWAY_PREFIX}/api/`);
+          text = text.replaceAll('"/gateway/', `"${GATEWAY_PREFIX}/gateway/`);
+          text = text.replaceAll("'/gateway/", `'${GATEWAY_PREFIX}/gateway/`);
+          text = text.replaceAll('"/assets/', `"${GATEWAY_PREFIX}/assets/`);
+          text = text.replaceAll("'/assets/", `'${GATEWAY_PREFIX}/assets/`);
+          if (text.includes('<head>') && !text.includes('<base')) {
+            text = text.replace('<head>', `<head><base href="${GATEWAY_PREFIX}/">`);
+          }
+          const buf = Buffer.from(text, 'utf8');
+          const hdrs = { ...up.headers, 'content-length': buf.length };
+          delete hdrs['transfer-encoding'];
+          res.writeHead(up.statusCode || 200, hdrs);
+          res.end(buf);
+        });
+      } else {
+        // 流式透传（SSE / chunked 关键路径）：状态行 + 头原样，body 逐 chunk 回写
+        res.writeHead(up.statusCode || 502, up.headers);
+        up.pipe(res, { end: true });
+      }
     },
   );
   // 请求体转发：仅当客户端真的带 body（POST/PUT 等）才 pipe——GET 也 pipe 会在
