@@ -1853,7 +1853,8 @@ function renderProd() {
   document.querySelectorAll('#region button').forEach((x) => x.classList.toggle('active', x.dataset.r === state.region));
   $('btn-checkin').style.display = canCheckin ? '' : 'none';
   if (!$('btn-checkin').disabled) {
-    $('btn-checkin').innerHTML = I.play + T('领取全部 ') + prodLabel(prod);
+    // 已在对应产品页内，不再重复品牌名（如「领取全部 WorkBuddy」）——直接「领取全部」
+    $('btn-checkin').innerHTML = I.play + T('领取全部');
   }
   // 顶栏产品专属入口：ZCode 设置组、Trae 打开客户端，带状态灯（运行中绿点呼吸）
   const dot = (on, pulse) => '<span class="dot' + (on ? ' on' : '') + (on && pulse ? ' pulse' : '') + '"></span>';
