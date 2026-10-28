@@ -45,19 +45,19 @@ Theme: ZCode pack gateway dispatch hardening (rotation fix + session stickiness)
 
 ## [1.6.1] (2026-10-23)
 
-本版主题:**Qoder 双渠道切号收口 + ZCode 活动权益「待生效」展示 + 10Router 账号管理入口**。
-Theme: Qoder dual-channel switching hardening + ZCode pending-grant display + 10Router account-management entry.
+本版主题:**Qoder 双渠道切号收口（判定错位 / 失效报错 / 自动拉起）+ ZCode 活动权益「待生效」展示 + 10Router 账号管理入口**。
+Theme: Qoder dual-channel switching hardening (current-account alignment / real-cause errors / auto-relaunch) + ZCode pending-grant display + 10Router account-management entry.
 
 ### 🔧 修复
 
-- **Qoder 切号后当前账号判定错位（切换键消失）**：国际 / 国内双渠道来回切，切完面板「客户端当前」对不上实际登录——`/api/status` 的 `qoderCurrent` 原来只按 uid 比对，且结果缓存 60 秒。现改为按 `auth.v1.dat` 解出的 **token 精确对齐账号 id**（uid 兜底），切号成功后立即清缓存；面板 `isClientCurrent()` 按 id 判定。非当前账号的切换按钮不再连带消失。回归：`test/qoder-current-token.test.js`。
-- **Qoder 切换凭据失效时提示指向真实原因**：原提示「凭据文件不存在（客户端可能被卸载或换了数据目录）」把最常见的「客户端退出登录后删掉了 `auth.v1.dat`」说成了换目录。现按探测结果给指引（已安装 → 确认登录后重新导入；未安装 → 先安装登录），并带上账号名与渠道名。
+- **Qoder 切号后当前账号判定错位（切换键消失）**：国际 / 国内双渠道来回切，切完面板「客户端当前」对不上实际登录——`/api/status` 的 `qoderCurrent` 原来只按 uid 比对，且结果缓存 60 秒。触发路径实测：客户端会静默刷新 token（旧快照 uid 相同但 token 已换），uid 比对撞上「同 uid 多条记录」时把别的记录误当当前账号——新当前账号不亮角标、切换键显隐全错，用户看到的就是「切完切换键没了」。现改为按 `auth.v1.dat` 解出的 **token 精确对齐账号 id**（uid 兜底），切号成功后立即清缓存；面板 `isClientCurrent()` 按 id 判定。非当前账号的切换按钮不再连带消失。回归：`test/qoder-current-token.test.js`（同步修掉新测试在 CI 全红的两处环境依赖——DPAPI 密钥创建延后到测试体（Linux 无 powershell.exe 不再 ENOENT 崩在 skip 之前）、收尾关日志归档流 + 退避重试兜住 gzip 落盘尾窗）。
+- **Qoder 切换凭据失效时提示指向真实原因**：原提示「凭据文件不存在（客户端可能被卸载或换了数据目录）」把最常见的「客户端退出登录后删掉了 `auth.v1.dat`」说成了换目录——照着提示找目录永远找不到。现按探测结果给指引（已安装 → 确认客户端里登录后再「本机导入」；未安装 → 先安装登录），并带上账号名与渠道名，报错能直接照着做。
 
 ### ✨ 新功能
 
-- **Qoder 切号后自动拉起客户端**：强制切换会先关掉 Qoder，原来切完停在「请重新打开」。现与 ZCode / mirasim / 妙手 / Trae 对齐，写完登录后自动启动，并按渠道只开对应的那一份（国际版 Qoder / 国内版 Qoder CN）。
-- **ZCode 未生效活动权益单独显示「待生效」**：活动权益要到 `effective_at` 才进余额（如 ZCode 1024 Dev Day 的 3 亿 + 2 亿），此前显示成「剩余 0 / 5 亿」，像额度丢了。现全部未生效时主行显示「待生效 5 亿 Token · 活动名 · HH:MM 到账」，进度条用虚线；部分生效时在剩余行下追加待生效行。后端补 `pendingTotal` / `pendingAt` 与每项权益的 `planName`。
-- **10Router「Cookie 会话」改为「账号管理」**：账号同步原来藏在「10Router 连接设置」弹窗最底部，找不到。现工具栏「账号管理」弹窗内分两块——账号同步（推本机 Qoder / WorkBuddy 为上游连接，可填面板密码走 OAuth 通道）与网页会话（Token Harbor 等 Cookie 捕获）。免费额度页「同步到 10Router」仍一键两路（连接 + 额度卡）。
+- **Qoder 切号后自动拉起客户端**：强制切换会先关掉 Qoder，原来切完停在「请重新打开」——用户得自己翻开始菜单找快捷方式。现与 ZCode / mirasim / 妙手 / Trae 对齐，写完登录后自动启动，并按渠道只开对应的那一份（切国际版不把国内版 Qoder CN 一起打开，反之亦然）。
+- **ZCode 未生效活动权益单独显示「待生效」**：活动权益要到 `effective_at` 才进余额（如 ZCode 1024 Dev Day 的 3 亿 + 2 亿），此前显示成「剩余 0 / 5 亿」——像额度丢了，用户以为领取失败。现全部未生效时主行显示「待生效 5 亿 Token · 活动名 · HH:MM 到账」，进度条用虚线（pending-ghost），不再画成零额度实条；部分生效时在剩余行下追加待生效行。后端补 `pendingTotal` / `pendingAt` 与每项权益的 `planName`（未生效权益靠它告诉用户「这是哪个活动发的」）。
+- **10Router「Cookie 会话」改为「账号管理」**：账号同步原来藏在「10Router 连接设置」弹窗最底部，找不到；Cookie 会话又单独占一个按钮。现工具栏「账号管理」弹窗内分两块——账号同步（推本机 Qoder / WorkBuddy 为上游连接，带面板密码输入走 OAuth 通道）与网页会话（Token Harbor 等 Cookie 捕获）。设置弹窗里重复的「同步账号到 10R」区块与旧弹窗死代码一并清掉；免费额度页「同步到 10Router」仍一键两路（连接 + 额度卡）。
 
 ### 🌐 其它
 
@@ -69,8 +69,8 @@ Theme: Qoder dual-channel switching hardening + ZCode pending-grant display + 10
 
 > **同版重发说明（2026-10-21）**：1.6.0 首发构建（tag 未打，无线上产物）后当日连修六笔（详见 docs/incident-20261021-quota-sync.md），全部并入本版随 tag 一次发出；此前分发的本地测试包（81b02e0 / 5b5aab6 / b6f6dad 等 build）与本 tag 构建并存，以本 tag 产物为准。
 
-本版主题:**Trae 9074 换设备号重试（#31）+ WorkBuddy 国际版「活跃领取」机制下线 + 豆包每日签到第 8 产品线（#32）+ MiniMax 免费额度卡回归 10Router 并带只读签到状态（#33 方案 B）+ 2026-10-21 六连修复**。
-Theme: Trae 9074 device-id rotation retry (#31) + WorkBuddy intl "active-claim" retirement + Doubao daily check-in as the 8th product line (#32) + MiniMax free-quota card back on 10Router with read-only check-in status (#33 plan B) + the 2026-10-21 six-fix batch.
+本版主题:**Trae 9074 换设备号重试（#31）+ WorkBuddy 国际版「活跃领取」机制下线 + 豆包快捷入口（#32）+ Inception 线整体移除（#35）+ MiniMax 免费额度卡回归 10Router 并带只读签到状态（#33 方案 B）+ 多语化更新日志（en/ja/ko）+ 2026-10-21 六连修复**。
+Theme: Trae 9074 device-id rotation retry (#31) + WorkBuddy intl "active-claim" retirement + Doubao quick-open entry (#32) + Inception line removal (#35) + MiniMax free-quota card back on 10Router with read-only check-in status (#33 plan B) + multilingual changelog (en/ja/ko) + the 2026-10-21 six-fix batch.
 
 ### 🔧 修复（2026-10-21 六连，详见 docs/incident-20261021-quota-sync.md）
 
@@ -80,22 +80,30 @@ Theme: Trae 9074 device-id rotation retry (#31) + WorkBuddy intl "active-claim" 
 - **cookie 收割后账号卡余额即刻刷新**（b6f6dad）:onCookieCaptured 漏拉 quota 缓存，小米等网页会话收割成功后卡面旧数字挂到手动刷新。
 - **「免费额度推送设置」改名「额度卡片推送设置」**（bea2acb）:推送范围含订阅/储值线不全是免费；四语词条同步。
 - **i18n 死词条全量清理**（8c8683a）:86 条无引用旧文案 ×4 语移除（1783→1699）；两轮核验防误删（转义归一 + 标点归一 + 前缀碎片匹配）。
+- **面板主题切换崩溃（白屏）**（d020c19）:捐赠二维码日夜双主题改造时 `applyDonateQrTheme` 定义位置落在 `applyTheme` 调用之后，暗色主题下函数不可达直接 ReferenceError——面板整页白屏。调整定义顺序修复。
+- **面板 HTML 缓存错位**（df1d1a6）:重装新版后浏览器仍渲染旧缓存的面板 HTML，用户看到的功能与安装版本对不上（按钮行为错乱、新功能不存在）。`/` 与 `/index.html` 响应加 `Cache-Control: no-cache`。
+- **豆包客户端指纹伪装**（2e53bb1）:纯网页 cookie 用裸 UA 打活动接口吃「请求非法」——UA 与 URL 平台参数对齐桌面版 webview 指纹后接口放行。
+- **minimax 外配额卡 source 挂靠纠正**（80a98ce）:此前误挂订阅线 minimax-code 同名卡（外部配额与连接卡互相踩），改挂 `minimax-free` 独立卡。
 
 ### ✨ 新功能
 
-- **豆包（doubao.com）每日签到接入（issue #32，第 8 条产品线，网页会话捕获线）**:接口形状经 CDP 调试端口两轮实测（已签 + 未签场景）——`POST /alice/ug/campaign/v3/detail/` 查状态、`POST /alice/ug/campaign/landing/checkin` 领取（+200 额度/天）；纯 cookie 鉴权、无 a_bogus/msToken 签名风控、服务端幂等（重复领取 `idempotent:true` 归 already）；cookieSites 探测框架升级支持 method/body（JSON API 探测先例）。参与门槛实测确认：**仅个人账号**（飞书企业号被排除，错误如实透出）；活动页「仅支持电脑版」为前端墙，接口不吃这套。
-- **MiniMax 免费额度卡回归 10Router + 只读签到状态推送（issue #33，方案 B）**:撤掉每轮推送对 minimax-code 卡片的清理（此前 10R 下架 minimax-free 后无挂靠点而停用），恢复推送并在每行配额带 `checkinToday` / `streakDays` 只读字段——凭据不出 CD，10R 只展示（徽章渲染由 10Router#77 消费，旧版 10R 忽略未知字段向前兼容）；**签到动作不进 10R**（只读边界）。新增 `fetchMiniMaxCheckinStatus` 只查不打 claim，失败返 null 不炸推送。
+- **豆包快捷入口（issue #32，随本版收敛为最终形态）**:网页 cookie 的额度读数与签到状态实测残缺（累计恒 0、状态不可信），按用户拍板**收敛为纯「打开豆包」快捷按钮卡**（entryOnly）——无捕获、无探测、无账号行，签到动作归还用户在官方页面完成；CD 不代签。接口形状勘探过程（CDP 实测 / 纯 cookie 鉴权 / 仅个人账号门槛）沉淀在 cookieSites 框架能力里（method/body JSON API 探测先例）。
+- **多语化更新日志（en / ja / ko）**（975f62f / ce6558c）:CHANGELOG.en.md / ja.md / ko.md 随包分发；桌面壳「更新日志」弹窗按面板语言优先拉对应语言文件（raw.githubusercontent 按 tag 拉取），缺该语言段落时回落 Releases body（简中主文）；语言路由 en→en、ja→ja、ko→ko，zh 系走主文件。
+- **捐赠支持弹窗**（b8c8d8f，随本版首发）:四渠道（爱发电 / 支付宝 / 微信 / GitHub Sponsors）与 10Router 一致，二维码 SVG 日夜双版本（dark 白码衬深底、light 黑码衬白底，背景矩形与码体分离着色修掉黑底黑码）。
+- **MiniMax 免费额度卡回归 10Router + 只读签到状态推送（issue #33，方案 B）**:撤掉每轮推送对 minimax-code 卡片的清理（此前 10R 下架 minimax-free 后无挂靠点而停用），恢复推送并在每行配额带 `checkinToday` / `streakDays` 只读字段——凭据不出 CD，10R 只展示（徽章渲染由 10Router#77 消费，旧版 10R 忽略未知字段向前兼容）；**签到动作不进 10R**（只读边界）。新增 `fetchMiniMaxCheckinStatus` 只查不打 claim，失败返 null 不炸推送。免费卡改按账号单卡（6ebcc52，minimax-code 同款单值卡：卡面副标题账号名）。
 - **WorkBuddy 临时活动批量领取**（ec95ffa，随本版首发）:新增 `POST /api/workbuddy/claim-activities` 批量领取临时活动（额外补偿 / 首月赠礼），面板一键领全部账号。
 - **网页会话探测频率治理**（ec95ffa，随本版首发）:面板 2 分钟轮询不再全量轰上游，`/quota` 默认读缓存快照，仅手动「刷新积分」真探；后台推送循环顺手保鲜快照。
+
+### 🔧 移除
+
+- **WorkBuddy 国际版「活跃领取」机制整体下线**（口径此前已定）:逐日主动打上游对话接口博活跃资格的灰色路径删除（服务端已收紧识别，issue #34 实证「请求非法」）——`checkinWorkbuddyIntl`、签到轮 wbActivity 开关与设置项、面板活跃统计 UI、行为测试与 18 条死词条 ×4 语全部清退；**workbuddy-intl 产品线保留**（登录 / 额度 / 赠送包余量 / 到期提醒 / 10R 推送照常），国内版每日签到不受影响。国际版积分获取引导改用官方网页版定时任务（codebuddy.ai/agents，#34 回复口径）。
+- **Inception Labs（Mercury）线整体移除**（issue #35，4c5c704 / ec54138）:Cloudflare 对代理出口 `/api/*` 持续 429，签到与额度轮询反复空打刷 401/429 报错——网页会话线与免费额度卡整体删除，**disabled 站点彻底断探测**（live quota / 重探路由直接 410）、面板整卡隐藏（用户预期是看不见而非置灰）、daemon 启动一次性清理孤儿账号（照 minimax-intl 先例）。
+- **「登录捕获」按钮改名「网页版」**（81b02e0）:更贴近用户心智——点它 = 打开该站网页登录；网页会话站点 label 只留品牌名（去掉「免费额度/控制台余额」等后缀，翻译负担与视觉噪音）。
 
 ### 🐛 修复
 
 - **Trae 签到 9074 换设备号重试（issue #31 报告者实测路径）**:对照实验证实派生设备号被服务端一律拒 9074、同一时刻真机号可领——重试时**轮换派生设备号**（attempt 递增），退避 3s/8s/15s 叠加换号。⚠️ 派生 salt 变化使 attempt=0 默认指纹一次性全量轮换（旧号已被服务端标记，必要代价）：**升级后首轮签到若仍见 9074 属预期**，重试机制会自动换号，多轮后趋稳。
 - **更新日志弹窗体验**（f67c468 随本版首发）:点击即开窗带「加载中…」；在线拉取认「本版主题:」格式（1.5.1 条目此前只剩标题）。
-
-### 🔧 移除
-
-- **WorkBuddy 国际版「活跃领取」机制整体下线**（口径此前已定）:逐日主动打上游对话接口博活跃资格的灰色路径删除（服务端已收紧识别，issue #34 实证「请求非法」）——`checkinWorkbuddyIntl`、签到轮 wbActivity 开关与设置项、面板活跃统计 UI、行为测试与 18 条死词条 ×4 语全部清退；**workbuddy-intl 产品线保留**（登录 / 额度 / 赠送包余量 / 到期提醒 / 10R 推送照常），国内版每日签到不受影响。国际版积分获取引导改用官方网页版定时任务（codebuddy.ai/agents，#34 回复口径）。
 
 
 ---
