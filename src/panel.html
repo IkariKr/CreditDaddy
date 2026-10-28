@@ -3067,15 +3067,16 @@ if (window.creditdaddy && typeof window.creditdaddy.onCookieCaptured === 'functi
   });
 }
 // Qoder 网页会话收割绑定完成（桌面壳在收割上报返回 bound>0 时推送）：
-// 「缺网页会话」徽章即时消失——此前只靠登录成功后的 12s/30s setTimeout 猜收割
-// 时机（收割在登录窗关闭后才走，时机不稳），猜错徽章就挂到 30s 周期轮。
+// 「缺网页会话」徽章即时消失，并按**手动刷新同款口径**重查额度（live 真探上游
+// 重拉逐资源包明细）——网页会话刚绑定，缓存快照里还是旧数据/无明细，只把徽章
+// 藏掉等于没修。此前靠登录成功后的 12s/30s setTimeout 猜收割时机（收割在登录窗
+// 关闭后才走，时机不稳），猜错徽章挂到 30s 周期轮、明细要等手动刷新才出来。
 // 网页面板（npm/CLI 场景无 preload）收不到事件，仍由周期轮兜底。
 if (window.creditdaddy && typeof window.creditdaddy.onQoderWebSessionBound === 'function') {
   window.creditdaddy.onQoderWebSessionBound(() => {
     refreshAccountList().then(() => {
-      // 网页会话刚绑定，补一轮该账号额度（逐资源包明细此时才可查）
       const qids = (state.accounts || []).filter((a) => String(a.provider).startsWith('qoder')).map((a) => a.id);
-      if (qids.length) loadQuotas(qids).then(render);
+      if (qids.length) loadQuotas(qids, { live: true }).then(render);
       else render();
     });
   });
@@ -4198,8 +4199,9 @@ async function pollDevice(sessionId, n, gen) {
       toast(r.already ? T('已更新「') + (r.account.name || r.account.id) + T('」的登录凭据') : T('已添加：') + (r.account.name || r.account.id));
       if (r.account.id) delete state.quotas[r.account.id];   // 旧 token 的积分查询结果（可能是失败）作废，马上重查
       await loadStatus(); await loadAccounts();
-      // 网页会话 Cookie 是登录窗「关闭」时才收割绑定的（比这里的成功提示晚好几秒）——
-      // 补两轮轻量刷新，「缺网页会话」徽章随绑定落地即时消失，不必等 30s 周期轮。
+      // 网页会话 Cookie 在登录窗「关闭」后才收割绑定（晚于本提示数秒且时机不稳）——
+      // 到位时桌面壳推 qoder-web-session:bound 事件刷新（onQoderWebSessionBound），
+      // 这里只保留两轮轻量补拉兜住非桌面场景（网页面板无 preload 收不到事件）。
       setTimeout(refreshAccountList, 12000);
       setTimeout(refreshAccountList, 30000);
     } else if (r.status === 'expired') {
