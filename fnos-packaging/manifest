@@ -1,5 +1,5 @@
 appname               = creditdaddy
-version = 1.6.2
+version = 1.6.3
 display_name          = CreditDaddy
 desc                    = Qoder / WorkBuddy / ZCode / mirasim / 妙手 / Trae / MiniMax / ModelScope / 豆包 多账号本地管理 + 每日积分自动签到 + 10Router 集成与网页会话捕获（面板端口 47860）
 platform              = x86
@@ -13,3 +13,4 @@ desktop_applaunchname = creditdaddy.Application
 service_port          = 47860
 ctl_stop              = true
 install_dep_apps      = nodejs_v24
+micro_app             = true

@@ -49,6 +49,13 @@ LOG="${DATA_DIR}/creditdaddy.log"
 PID_FILE="${DATA_DIR}/creditdaddy.pid"
 KEY_FILE="${DATA_DIR}/panel_key"
 
+# fnOS 统一网关反代（issue #39）：公网 HTTPS 入口（反代 / Tunnel）按主机名拼出
+# http://域名:47860 不可达 → 桌面/APP 白屏。走统一网关（ui/config 的 gatewaySocket
+# 声明 app.sock，fnOS 把 /app/creditdaddy/* 转给 target/app.sock），窗口 443 直达。
+GW_SOCK="${TRIM_APPDEST_SOCK:-/var/apps/${APP_NAME}/target/app.sock}"
+GW_LOG="${DATA_DIR}/gateway-proxy.log"
+GW_PID="${DATA_DIR}/gateway-proxy.pid"
+
 migrate_legacy() {
     # 项目曾名 QoderDaddy（appname=qoderdaddy）：首次启动时把旧应用的账号数据与面板密钥复制过来
     [ -d "${DATA_DIR}/data" ] && return 0
@@ -62,9 +69,38 @@ migrate_legacy() {
     fi
 }
 
+# 统一网关反代：app.sock（fnOS 网关 → 本代理 → 127.0.0.1:$PORT）。
+# 无网关场景（ui/config 未声明 gatewaySocket 的旧包 / 直连 47860）不受影响——
+# 代理只是多一条访问路径，起不来不挡主服务。
+start_gateway_proxy() {
+    if [ -f "${GW_PID}" ] && kill -0 "$(cat "${GW_PID}")" 2>/dev/null; then
+        return 0
+    fi
+    mkdir -p "$(dirname "${GW_SOCK}")" 2>/dev/null || true
+    rm -f "${GW_SOCK}" 2>/dev/null || true
+    GW_SRC="$(dirname "$0")/../gateway-proxy.mjs"
+    [ -f "${GW_SRC}" ] || GW_SRC="$(dirname "$0")/gateway-proxy.mjs"
+    [ -f "${GW_SRC}" ] || GW_SRC="${SRC_DIR}/../gateway-proxy.mjs"
+    if [ ! -f "${GW_SRC}" ]; then
+        echo "gateway proxy script not found, skip (direct port access still works)"
+        return 0
+    fi
+    SOCK_PATH="${GW_SOCK}" CD_PORT="${PORT}" GATEWAY_PREFIX="/app/${APP_NAME}" \
+        nohup "${NODE_BIN}" "${GW_SRC}" >> "${GW_LOG}" 2>&1 &
+    echo $! > "${GW_PID}"
+    # 等 socket 文件出现（最多 5s），失败仅记日志不阻塞主服务
+    for i in $(seq 1 10); do
+        [ -S "${GW_SOCK}" ] && { echo "gateway proxy ready (${GW_SOCK})"; return 0; }
+        sleep 0.5 2>/dev/null || sleep 1
+    done
+    echo "gateway proxy socket timeout (check ${GW_LOG}); direct port access still works"
+    return 0
+}
+
 start() {
     mkdir -p "${DATA_DIR}"
     migrate_legacy
+    start_gateway_proxy
     if [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}")" 2>/dev/null; then
         echo "already running (pid $(cat "${PID_FILE}"))"
         return 0
@@ -105,6 +141,12 @@ stop() {
         rm -f "${PID_FILE}"
     fi
     pkill -f "${SRC_DIR}/bin/creditdaddy.js" 2>/dev/null || true
+    # 网关反代一并停（socket 文件由代理自身 SIGTERM 清理，残留时这里兜底）
+    if [ -f "${GW_PID}" ]; then
+        kill "$(cat "${GW_PID}")" 2>/dev/null || true
+        rm -f "${GW_PID}"
+    fi
+    [ -n "${GW_SOCK}" ] && rm -f "${GW_SOCK}" 2>/dev/null || true
     echo "stopped"
 }
 
