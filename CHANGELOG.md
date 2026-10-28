@@ -12,11 +12,17 @@
 
 ## [1.6.2] (2026-10-26)
 
-本版主题:**ZCode 体验包网关分流收口（轮转修复 + 会话粘滞）+ LongCat 包行数字失真修复 + 领取到账时间可见**。
-Theme: ZCode pack gateway dispatch hardening (rotation fix + session stickiness) + LongCat pack-row number fix + claim arrival time surfaced.
+本版主题:**ZCode 体验包网关分流收口（轮转修复 + 会话粘滞）+ LongCat 包行数字失真修复 + 领取到账时间可见 + 429 退避阶梯与切号/领取反馈收口**。
+Theme: ZCode pack gateway dispatch hardening (rotation fix + session stickiness) + LongCat pack-row number fix + claim arrival time surfaced + 429 backoff ladders and switch/claim feedback hardening.
+
+> **Tag 前追加（2026-10-28）**：以下「429 退避阶梯」「WorkBuddy 未装拦截」「领取即时上卡」「10R 渠道开关」四组随本版一并发出（tag 未发过，无独立版本号）。
 
 ### 🔧 修复
 
+- **网关 429 冷却从「固定 5 分钟」改为退避阶梯**：三个网关（ZCode / MiniMax / Trae）此前把 429 冷却写死 5 分钟——上游限流窗口通常不止 5 分钟，冷却一到期就立刻又撞 429，同一账号陷入「冷却 → 立刻再被限流」的循环（日志里清一色「冷却 5 分钟」）。现按连续次数走阶梯 **30s → 1min → 2min → 5min → 10min**（第 5 次起封顶 10 分钟不再上涨），成功补全一次即清零计数——偶发撞一次 429 不会累积，只有真被持续限流的号才会拉长。清零点覆盖补全成功（流式 / 非流式）、凭据更新复活、重开网关、领到新额度四处；日志带连续次数（「冷却 10 分钟(连续第 2 次)」），一眼分清偶发与持续限流。
+- **Trae 网关事件流阶段 429 此前不进冷却**：Trae 补全是两段式（建会话 → 拉 events 流），会话建好、拉流被 429 拒时只记「事件流 HTTP 429」不计数——该号下一轮会话创建仍从 30 秒档起算继续撞限流。现与建会话阶段同走阶梯。
+- **WorkBuddy 未装客户端时切换明确提示安装**：`writeWorkbuddySession()` 此前无条件 mkdir + 写会话文件并返回成功——没装 WorkBuddy / CodeBuddy 客户端的机器点了切换，面板显示「已切换」，但没有任何客户端会应用这份凭据，纯死路。现 `detectWorkbuddy()` 只认客户端 exe（凭据目录不能当依据——CD 自己切换 mkdir 出的空壳目录会误报已安装），未安装时切换接口返回 `WORKBUDDY_NOT_INSTALLED`；面板点切换即 toast 指引、WorkBuddy 页未安装时横幅说明（Token 导入 / 额度 / 领取不受影响，只有切换需要客户端）。
+- **ZCode 领取成功后卡片与徽标即时更新**：自动领取（后台轮询）与手动领取两条路径此前只 `loadQuotas()` 不重绘，卡片停在旧样子；且 `statusOf()` 对 ZCode 直接返回空徽标——领取结果在卡片上毫无痕迹。活动额度常带 `effective_at`（当天稍晚到账），在那之前额度行是「待生效」，与旧状态差别用户根本看不出来，只能自己手动点刷新。现三处（自动领取 / 弹窗手动领取 / 单卡刷新）补重绘，ZCode 补「已领取 / 已领过 / 领取失败」徽标。
 - **ZCode 体验包网关「多账号轮换」实际没在转——所有请求都堆在第一个号上**：`rotationQueue()` 只把轮转指针 `rrIndex` 归一化到可用账号数范围内，**从不自增**，于是队首恒为账号库里的第一个账号，`handleGateway` 每轮都从它起用；其余账号只在它失败 / 冷却 / 被拉黑时才挨到。现每轮推进一格，请求分摊到各账号；可用集变化时起点取模归位，不越界卡死。同仓 MiniMax 网关用「粘性主力 + 权重排序」能分流，ZCode 这条连指针都没转起来，是它独有的实现缺陷。
 - **LongCat 资源包行数字失真（issue #37）**：推给 10Router 的包行把真实数字拼进了 `name` 文本（「317.57 万 / 500 万 · 36%已消耗」），结构化字段却推 `used=0 / total=剩余值 / remainingPercentage=100`——10R 渲染链只认结构化字段，卡面画成满格未用，与 name 文本自相矛盾。现改为**字段即真相**：`used`=已消耗、`total`=包总量、`remainingPercentage`=剩余%，`name` 退回纯文案（获赠资源包 / 资源包），到期日走 `resetAt`；Balance 汇总行同步改推 Σ消耗 / Σ总量，10R 池条据此画出消耗空段（此前 Balance 推剩余值当总量，池条恒满）。
 - **ZCode 领取成功但活动未到账时，消息带「HH:MM 到账」**：`claimPlan()` 早就返回了 `startsAt`，但 `zcodeAutoClaim` 拿到后完全没用，`claims` 只记 `plan/via/ok`——到账时间就这么丢了。现场：自动领到「ZCODE GLOBAL BUILD」3 亿 Token，日志明确「已领取（免验证码）」，面板却只显示「待生效 3 亿 · 23:00 到账」，用户无法区分「没领上」还是「要等」。现两条领取路径（免验证码 / 静默验证码）都带出 `startsAt`，仅当到账时间在未来才追加「（HH:MM 到账）」（同日只出时分、跨天出 `M-DD HH:MM`），已生效的不加后缀。
@@ -24,12 +30,15 @@ Theme: ZCode pack gateway dispatch hardening (rotation fix + session stickiness)
 ### ✨ 新功能
 
 - **ZCode 体验包网关会话粘滞**：同一会话的多轮对话固定用同一个账号，新会话才轮转（跳号会让上下文承接出现割裂）。会话标识取自调用方 body 的 `metadata.user_id`（宽容解析嵌套 JSON 串 / 顶层 `session_id` / 字符串直给三种形状）；同时 `metadata.user_id` 改为**调用方传了就原样透传、没传才随机生成**——此前每次请求都新生成一个 `session_id`，上游眼里每请求都是新会话，会话连续性本身就是断的。粘滞 TTL 30 分钟，到期让位给轮转；粘住的号被拉黑 / 冷却 / 打标时自动让位，不死粘。调用方没传 `metadata` 时退化为纯轮转（行为安全）。
+- **10Router 账号同步渠道开关**：账号管理弹窗新增渠道勾选区（只显示本机有账号的渠道），每渠道两个勾——主勾 = 额度卡推送、「连接」= 账号连接同步。10Router 已单独配了同源渠道（如 minimax-code 连接）时，取消勾选即可去掉 CD 侧重复维护的同名免费卡（`minimax-free-*`）——此前两张卡并存且数字各刷各的。`tenrouter.json` 新增 `accountSync { enabled, providers }`（providers 空 = 不限渠道，向后兼容）与 `quotaPushDisabledProviders[]`；被排除渠道的刷新回调返回 410 不再回源。10R 端已有卡片不会被 CD 主动删除（避免误删手动建的卡），挂 7 天 TTL 自然过期或手动删。
 - 面板「接口使用中」徽标在多账号时注明轮转分摊（n 个 ZCode 账号、每请求换一个），避免以为只有一个号在服役；`gatewayStatus` 新增 `stickySessions`。
 
 ### 🌐 其它
 
-- 测试补强：网关轮转 / 会话粘滞各 2–4 条（均验证过「摘掉修复即转红」），logger 归档等待条件从「文件存在」改为「文件有字节」（修 CI 在 Windows / Node 24 上的偶发竞态红——`createWriteStream` 一 new 出来文件就存在，但 `write()` 落盘是异步的）。
-- 补 i18n 词条（ZCode 徽标轮转说明）四语同步；`scripts/check-i18n.js` 全量覆盖通过。
+- `gatewayStatus` 三网关补 `coolingDetail`（剩余秒数 / 文案 / 连续次数）；`cooling` 字段保持字符串数组历史形状不破。新增 `formatDuration.js`：冷却时长可读格式，30s 按秒显示（`Math.round(ms/60000)` 会把 30s 抹成「1 分钟」）。
+- 10Router 工具栏按钮顺序调整为 刷新额度 · 用量同步 · 账号管理 · 设置。
+- 测试补强：网关轮转 / 会话粘滞各 2–4 条、三网关 429 阶梯逐档断言 + 封顶 + 成功清零、`formatDuration` 边界、`detectWorkbuddy` 判定、渠道白名单过滤 / 排除渠道零推送（关键用例均验证过「摘掉修复即转红」）；logger 归档等待条件从「文件存在」改为「文件有字节」（修 CI 在 Windows / Node 24 上的偶发竞态红——`createWriteStream` 一 new 出来文件就存在，但 `write()` 落盘是异步的）。全量 340 条。
+- 补 i18n 词条（冷却阶梯 / WorkBuddy 未安装指引 / 渠道开关 / ZCode 徽标轮转说明）四语同步；`scripts/check-i18n.js` 全量覆盖通过。
 
 
 ---
