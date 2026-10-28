@@ -1638,7 +1638,31 @@ async function handleApi(req, res, url) {
   }
   // 额度卡推送（issue #24）：手动触发一轮 external-quota 推送（面板「免费额度」页同步按钮附带）
   if (p === '/api/tenrouter/push-quota' && method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
     try {
+      // webSessionOnly：只推网页会话渠道（cookie-site 系）的额度卡——免费额度页
+      // 「同步到 10Router」的口径，不被本机凭据线（如 minimax）搭车
+      if (body?.webSessionOnly === true) {
+        const accounts = await loadAccounts();
+        const wsAccounts = accounts.filter((a) => a.meta?.cookieSiteId || a.provider === 'tokenharbor');
+        const sources = new Set(['tokenharbor']);   // tokenharbor 单一 source（聚合卡），无账号也可能要清旧卡
+        for (const a of wsAccounts) {
+          if (a.provider === 'xiaomi-mimo' || a.meta?.cookieSiteId === 'xiaomi-mimo') {
+            const { buildXiaomiMimoQuotaPayload } = await import('./xiaomiMimoClient.js');
+            sources.add(buildXiaomiMimoQuotaPayload(a).source);
+          } else if (a.provider === 'river' || a.meta?.cookieSiteId === 'river') {
+            const { buildRiverQuotaPayload } = await import('./riverClient.js');
+            sources.add(buildRiverQuotaPayload(a).source);
+          } else if (a.provider === 'modelscope' || a.meta?.cookieSiteId === 'modelscope') {
+            const { buildModelScopeQuotaPayload } = await import('./modelscopeClient.js');
+            sources.add(buildModelScopeQuotaPayload(a).source);
+          } else if (a.provider === 'longcat' || a.meta?.cookieSiteId === 'longcat') {
+            const { buildLongcatQuotaPayload } = await import('./longcatClient.js');
+            sources.add(buildLongcatQuotaPayload(a).source);
+          }
+        }
+        return json(res, 200, await tenrouter.pushQuotaCards({ onlySources: [...sources] }));
+      }
       return json(res, 200, await tenrouter.pushQuotaCards());
     } catch (e) { return json(res, 500, { error: e.message, code: e.code }); }
   }

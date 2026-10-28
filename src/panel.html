@@ -2947,13 +2947,14 @@ $('btn-free-sync-10r')?.addEventListener('click', async () => {
   if (!(tr.config && tr.config.configured)) return toast(T('请先保存 10Router 设置'), false);
   btn.disabled = true;
   try {
-    // 先推账号连接（原 trSyncAccounts 的职责），失败不阻断额度卡推送
-    const sa = await api('/api/tenrouter/sync-accounts', { method: 'POST', json: {} }).catch((e) => ({ summary: e.message, error: true }));
-    if (sa && sa.summary) toast(sa.summary, !sa.error && !/失败/.test(sa.summary));
-    const r = await api('/api/tenrouter/push-quota', { method: 'POST' });
+    // 只推网页会话渠道的额度卡（webSessionOnly）——账号连接同步不在这里做：那是
+    // 10Router 页「账号管理」弹窗的职责（还带渠道开关）；本机凭据线（如 minimax-free）
+    // 也不搭车，本页的「同步」语义就只管网页会话卡。
+    const r = await api('/api/tenrouter/push-quota', { method: 'POST', json: { webSessionOnly: true } });
     const failed = (r.results || []).filter((x) => x.status === 'failed');
     if (failed.length) toast(T('额度卡部分推送失败：') + failed.map((x) => x.source + '（' + x.error + '）').join('；'), false);
     else if ((r.results || []).length) toast(T('额度卡已推送到 10Router 配额页'), true);
+    else toast(T('没有可推送的额度卡（网页会话账号为空或推送开关已关闭）'), false);
   } catch (e) { toast(e.message, false); }
   btn.disabled = false;
 });
@@ -2991,7 +2992,8 @@ $('free-settings-push-now')?.addEventListener('click', async () => {
   const btn = $('free-settings-push-now');
   btn.disabled = true;
   try {
-    const r = await api('/api/tenrouter/push-quota', { method: 'POST' });
+    // 与本页「同步到 10Router」同口径：只推网页会话渠道的额度卡
+    const r = await api('/api/tenrouter/push-quota', { method: 'POST', json: { webSessionOnly: true } });
     const failed = (r.results || []).filter((x) => x.status === 'failed');
     if (failed.length) toast(T('额度卡部分推送失败：') + failed.map((x) => x.source + '（' + x.error + '）').join('；'), false);
     else if ((r.results || []).length) toast(T('额度卡已推送到 10Router 配额页'), true);
