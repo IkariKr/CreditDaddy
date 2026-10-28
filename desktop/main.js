@@ -640,13 +640,17 @@ async function openIncognitoWindow(url, { persistKey } = {}) {
 
 /** 读取本次登录窗口隐私会话里的 qoder 网页 Cookie，交给 daemon 按 uid 归户。
  *  两个域都上报（含 Cookie 数量的诊断信息）——daemon 会把「收割到 0 条」也记进运行日志，
- *  否则收割失败完全静默，「缺网页会话」查不到原因。 */
+ *  否则收割失败完全静默，「缺网页会话」查不到原因。
+ *  上报成功且有账号完成绑定时推 `qoder-web-session:bound` 事件：面板的「缺网页会话」
+ *  徽章据此即时消失（此前只靠 12s/30s 两个 setTimeout 猜收割时机，猜错就挂到
+ *  30s 周期轮——收割明明完成了用户却要手动刷新）。 */
 async function harvestQoderWebSession(ses) {
   const targets = [
     { kind: 'qoder-cn', url: 'https://qoder.cn' },
     { kind: 'qoder', url: 'https://qoder.com' },
   ];
   const panelKey = (daemonMod && typeof daemonMod.getSessionKey === 'function' && daemonMod.getSessionKey()) || (daemonMod && typeof daemonMod.getPanelKey === 'function' ? daemonMod.getPanelKey() : '');
+  let boundTotal = 0;
   for (const t of targets) {
     const cookies = await ses.cookies.get({ url: t.url }).catch(() => []);
     const cookie = (cookies || []).map((c) => c.name + '=' + c.value).join('; ');
@@ -659,11 +663,19 @@ async function harvestQoderWebSession(ses) {
         headers: { 'Content-Type': 'application/json', ...(panelKey ? { 'x-qd-key': panelKey } : {}) },
         body: JSON.stringify({ kind: t.kind, cookie, diag: { cookieCount: (cookies || []).length } }),
       });
-      if (!res.ok) note = 'HTTP ' + res.status + (res.status === 401 ? '（密钥被拒——壳与 daemon 版本或实例不一致？）' : '');
+      if (res.ok) {
+        const d = await res.json().catch(() => ({}));
+        boundTotal += Number(d.bound) || 0;
+      } else {
+        note = 'HTTP ' + res.status + (res.status === 401 ? '（密钥被拒——壳与 daemon 版本或实例不一致？）' : '');
+      }
     } catch (e) {
       note = '连接失败：' + (e?.cause?.code || e?.message || e);
     }
     if (note) notify('Qoder', Tt('{kind} 网页会话收割上报失败：{note}', { kind: t.kind, note }));
+  }
+  if (boundTotal > 0) {
+    try { if (win && !win.isDestroyed()) win.webContents.send('qoder-web-session:bound', { bound: boundTotal }); } catch { /* ignore */ }
   }
 }
 

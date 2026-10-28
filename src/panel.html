@@ -3066,6 +3066,20 @@ if (window.creditdaddy && typeof window.creditdaddy.onCookieCaptured === 'functi
       });
   });
 }
+// Qoder 网页会话收割绑定完成（桌面壳在收割上报返回 bound>0 时推送）：
+// 「缺网页会话」徽章即时消失——此前只靠登录成功后的 12s/30s setTimeout 猜收割
+// 时机（收割在登录窗关闭后才走，时机不稳），猜错徽章就挂到 30s 周期轮。
+// 网页面板（npm/CLI 场景无 preload）收不到事件，仍由周期轮兜底。
+if (window.creditdaddy && typeof window.creditdaddy.onQoderWebSessionBound === 'function') {
+  window.creditdaddy.onQoderWebSessionBound(() => {
+    refreshAccountList().then(() => {
+      // 网页会话刚绑定，补一轮该账号额度（逐资源包明细此时才可查）
+      const qids = (state.accounts || []).filter((a) => String(a.provider).startsWith('qoder')).map((a) => a.id);
+      if (qids.length) loadQuotas(qids).then(render);
+      else render();
+    });
+  });
+}
 
 function renderTenrouter() {
   const box = $('tr-panel');

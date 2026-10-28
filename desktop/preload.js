@@ -49,4 +49,6 @@ contextBridge.exposeInMainWorld('creditdaddy', {
   openChangelogBrief: () => ipcRenderer.invoke('open-changelog-brief'),
   /** cookie 站点捕获成功（issue #23：桌面壳收割完成通知），cb({site, name}) */
   onCookieCaptured: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('cookie-site:captured', l); return () => ipcRenderer.removeListener('cookie-site:captured', l); },
+  /** Qoder 网页会话收割绑定完成（cb({bound})）：面板「缺网页会话」徽章即时消失 */
+  onQoderWebSessionBound: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('qoder-web-session:bound', l); return () => ipcRenderer.removeListener('qoder-web-session:bound', l); },
 });
