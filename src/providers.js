@@ -17,6 +17,7 @@ import { fetchCatpawQuota, fetchCatpawProfile } from './catpawClient.js';
 import { fetchTraeQuota, checkinTrae, verifyTraeAccount } from './traeClient.js';
 import { fetchMiniMaxQuota, checkinMiniMax, verifyMiniMaxAccount } from './minimaxClient.js';
 import { fetchDoubaoStatus, checkinDoubao } from './doubaoClient.js';
+import { fetchCodeartsBalance, checkinCodearts } from './codeartsClient.js';
 /** 从 userinfo 响应中挑一个可读的显示名 */
 export function displayNameFrom(ui) {
   const pick = [ui?.nickname, ui?.name, ui?.username, ui?.email]
@@ -227,6 +228,41 @@ const PRODUCTS = {
           unit: '额度',
         }] : [],
         empty: st.totalAmount === 0 && !st.checkin,
+      };
+    },
+  },
+  codearts: {
+    label: '码道 CodeArts',
+    // 网页会话捕获线（issue #40）：凭据是 codearts.huaweicloud.com/portal 会话 cookie。
+    // 每日「活动福利 → 每日领取」+100 积分（体验版，当日有效，活动期至 2026-12-31）；
+    // 「额度」= 积分总量（all_credit_package，含即将到期数）。
+    checkin: (account) => checkinCodearts(account.meta?.cookieSiteSession?.cookie || account.token || ''),
+    quota: async (account) => {
+      const cookie = account.meta?.cookieSiteSession?.cookie || account.token || '';
+      const r = await fetchCodeartsBalance(cookie);
+      if (!r.ok && r.authExpired) {
+        const e = new Error('码道会话已失效，请重新登录捕获');
+        e.auth = true;
+        throw e;
+      }
+      if (!r.ok) throw new Error(r.error || '码道余额查询失败');
+      return {
+        total: r.total,
+        used: r.used,
+        remaining: r.remain,
+        exceeded: false,
+        plan: '体验版',
+        planExpiresAt: null,
+        parts: [{
+          name: r.expiring > 0 ? `积分（其中 ${r.expiring} 即将到期）` : '积分',
+          total: r.total,
+          used: r.used,
+          remaining: r.remain,
+          expiresAt: null,
+          recurring: false,
+          unit: '积分',
+        }],
+        empty: r.total === 0,
       };
     },
   },

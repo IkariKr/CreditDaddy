@@ -14,3 +14,4 @@ desktop/server.bak-*/
 /build.json
 release-files/
 fnos-packaging/app/server/
+.tmp-ca-probe/

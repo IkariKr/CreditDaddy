@@ -180,14 +180,16 @@ export const COOKIE_SITES = [
     name: '码道 CodeArts',
     provider: 'codearts',
     label: '码道 CodeArts',
-    // loginUrl 指华为云统一登录页（siteForLoginUrl 前缀命中它，开窗收割才生效）——
-    // 收割是全量 cookie（harvestCookieSiteSession 不按 URL 过滤），console/auth 两域会话一并落袋
-    loginUrl: 'https://auth.huaweicloud.com/authui/login',
-    homeUrl: 'https://console.huaweicloud.com/agentarts/',
+    // 码道产品本体在 codearts.huaweicloud.com/portal（独立于 agentarts console）——
+    // 后端认 portal 域自身会话（SessionID / devclouddevuibjtcftk，部分 httpOnly），
+    // 收割域必须含它。loginUrl 前缀要被 siteForLoginUrl 命中：直接指产品站（未登录访问
+    // 会 302 到华为云统一登录，登录弹窗流程不变）；收割是全量 cookie，三个域一并落袋
+    loginUrl: 'https://codearts.huaweicloud.com/portal',
+    homeUrl: 'https://codearts.huaweicloud.com',
     cookieUrls: [
-      'https://console.huaweicloud.com',
+      'https://codearts.huaweicloud.com',
       'https://auth.huaweicloud.com',
-      'https://portal.huaweicloud.com',
+      'https://console.huaweicloud.com',
     ],
     verify: 'api',
     accountName: '码道 CodeArts',

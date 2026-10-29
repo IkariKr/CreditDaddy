@@ -353,6 +353,25 @@ async function reprobeCookieAccount(site, a) {
       logger.info('COOKIE-SITE', '{name} 就地重探通过（{balance} USD）', { name: site.name, balance: bal.balance });
       return finish({ id: a.id, name: a.name, ok: true, identity: null, balance: bal.balance, quotaSnapshot: { used: 0, total: bal.balance, isCreditBalance: true, at: now } });
     }
+    if (site.id === 'codearts') {
+      // 码道（issue #40）：余额即探活（JSON 才算会话有效；HTML=网关登录页 fallback）。
+      // 重探刷新积分快照；claim 签到走 checkin 轮，不在这里做
+      const { fetchCodeartsBalance } = await import('./codeartsClient.js');
+      const bal = await fetchCodeartsBalance(cookie).catch((e) => ({ ok: false, error: e?.message || 'network' }));
+      if (!bal.ok) return finish({ id: a.id, name: a.name, ok: false, error: bal.authExpired ? '码道会话已失效，请重新登录捕获' : (bal.error || '探测失败') });
+      await withAccounts((list) => {
+        const hit = list.find((x) => x.id === a.id);
+        if (!hit) return;
+        hit.meta = {
+          ...(hit.meta || {}),
+          cookieSiteSession: { cookie, capturedAt: hit.meta?.cookieSiteSession?.capturedAt || now },
+          quotaSnapshot: { used: 0, total: bal.total, isCreditBalance: true, at: now },
+        };
+        hit.updatedAt = now;
+      });
+      logger.info('COOKIE-SITE', '{name} 就地重探通过（积分 {total}，即将到期 {expiring}）', { name: site.name, total: bal.total, expiring: bal.expiring });
+      return finish({ id: a.id, name: a.name, ok: true, identity: null, balance: bal.remain, quotaSnapshot: { used: 0, total: bal.total, isCreditBalance: true, at: now } });
+    }
     if (site.id === 'doubao') {
       // 豆包（issue #32）：detail 接口一次拿全（会话有效性 + 签到状态 + 累计点数），
       // 重探 = 刷新额度快照；无 10R 同步（豆包不推外部配额卡，错误文案不再误导）
