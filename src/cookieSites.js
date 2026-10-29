@@ -169,6 +169,29 @@ export const COOKIE_SITES = [
     // 只在面板出示快捷按钮。
     entryOnly: true,       // 只出「打开豆包」按钮，无会话捕获 / 无探测 / 无账号行
     hint: '在豆包客户端（或网页）登录后捕获会话，CD 只读展示体验额度与每日签到状态（+200/天）；签到请在「打开豆包」里手动完成——活动在客户端内，CD 不代签；仅个人账号可参与（飞书企业号被排除），凭据只存本机。'
+  },
+  {
+    // 华为云码道 CodeArts 代码智能体（issue #40）：每日签到得积分（体验版 100/天，当日有效）。
+    // 活动期 2026-10-27 20:00 ～ 2026-12-31；控制台入口 console.huaweicloud.com/agentarts（华为云
+    // 统一登录，region 可变），签到动作在「活动福利 → 每日领取」。
+    // ⚠ 端点未定（抓包/真 cookie 考古中）：probe/identity/quota 先按华为云控制台通用形状占位，
+    // cookie 捕获先行（cookieUrls 覆盖 console + auth 两域），签到/余额实现挂 codeartsClient.js TODO。
+    id: 'codearts',
+    name: '码道 CodeArts',
+    provider: 'codearts',
+    label: '码道 CodeArts',
+    // loginUrl 指华为云统一登录页（siteForLoginUrl 前缀命中它，开窗收割才生效）——
+    // 收割是全量 cookie（harvestCookieSiteSession 不按 URL 过滤），console/auth 两域会话一并落袋
+    loginUrl: 'https://auth.huaweicloud.com/authui/login',
+    homeUrl: 'https://console.huaweicloud.com/agentarts/',
+    cookieUrls: [
+      'https://console.huaweicloud.com',
+      'https://auth.huaweicloud.com',
+      'https://portal.huaweicloud.com',
+    ],
+    verify: 'api',
+    accountName: '码道 CodeArts',
+    hint: '登录码道控制台后自动捕获华为云会话；每日「活动福利 → 每日领取」积分（体验版 100/天，当日有效，活动期至 2026-12-31）由 CD 自动签到。凭据只存本机（账号库加密）。'
   }
 ];
 
