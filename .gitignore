@@ -13,3 +13,4 @@ desktop/server.bak-*/
 .claude/worktree*
 /build.json
 release-files/
+fnos-packaging/app/server/

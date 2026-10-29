@@ -103,6 +103,11 @@ export async function verifyQuotaRefresh({ source, exp, sig }, { nowMs } = {}) {
 const hits = new Map();   // ip → number[]
 export function refreshRateLimited(ip, { limit = 20, windowMs = 60_000, nowMs } = {}) {
   const now = nowMs ?? Date.now();
+  // 顺手清掉整个窗口都没动静的来源：公网/网段扫描器每个 IP 都会占一条，永不回收
+  for (const [k, v] of hits) {
+    const last = v.length ? v[v.length - 1] : 0;
+    if (now - last >= windowMs) hits.delete(k);
+  }
   const arr = (hits.get(ip) || []).filter((t) => now - t < windowMs);
   arr.push(now);
   hits.set(ip, arr);

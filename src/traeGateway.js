@@ -45,6 +45,21 @@ export async function setGatewayEnabled(v) {
   }
 }
 
+/** 丢弃错误响应的 body：不读不取消的 undici body 会把连接钉住到服务端关闭或 ~300s 超时
+ *  （429 风暴时每个失败尝试泄漏一条 socket）。cancel 即可，错误体不需要内容。 */
+function drainErr(res) {
+  try { res?.body?.cancel?.()?.catch?.(() => {}); } catch { /* 已读/已取消 */ }
+}
+
+/** 账号被删除时清掉它在各轮换 Map 里的残留（daemon DELETE /api/accounts/:id 调用） */
+export function forgetAccount(id) {
+  cooling.delete(id);
+  coolingStreak.delete(id);
+  dead.delete(id);
+  weights.delete(id);
+  swrr.delete(id);
+}
+
 // ── 账号轮换状态（进程内） ──
 
 const cooling = new Map();  // accountId → 冷却截止(ms)
@@ -323,6 +338,9 @@ export async function handleGateway(req, res) {
   const attempted = [];
   const clientAbort = new AbortController();
   req.once('close', () => { if (!res.writableEnded) clientAbort.abort(); });
+  // 优雅断开（客户端 fetch abort 在上游响应前）只触发 res 'close'，不触发 req 'close'
+  // ——少这一个钩子，取消后还会真的创建 SOLO 会话烧掉额度
+  res.once('close', () => { if (!res.writableEnded) clientAbort.abort(); });
 
   for (let i = 0; i < Math.min(MAX_ATTEMPTS, queue.length); i++) {
     const account = queue[i];
@@ -414,6 +432,7 @@ export async function handleGateway(req, res) {
     }
 
     if (sessionRes.status === 401) {
+      drainErr(sessionRes);
       markDead(account);
       attempted.push({ account: label, ok: false, error: 'Token 彻底失效 (401)，拉黑' });
       logger.info('TRAE-GW', '{label} 凭据失效,拉黑', { label });
@@ -421,6 +440,7 @@ export async function handleGateway(req, res) {
     }
 
     if (sessionRes.status === 429) {
+      drainErr(sessionRes);
       const ms = markRateLimited(account.id);
       const dur = formatDurationMs(ms);
       const streak = coolingStreak.get(account.id);
@@ -431,6 +451,7 @@ export async function handleGateway(req, res) {
 
     const sessionData = await sessionRes.json().catch(() => null);
     if (!sessionRes.ok || sessionData?.code !== 0 || !sessionData?.data?.chat_session_id) {
+      drainErr(sessionRes);
       const errMsg = sessionData?.message || `HTTP ${sessionRes.status}`;
       attempted.push({ account: label, ok: false, error: `会话创建失败: ${errMsg}` });
       continue;
@@ -439,11 +460,13 @@ export async function handleGateway(req, res) {
     const chatSessionId = sessionData.data.chat_session_id;
     const messageId = sessionData.data.message_id;
 
-    // 清理 session 的辅助函数
+    // 清理 session 的辅助函数。不挂 clientAbort 信号——客户端取消时恰恰要执行这里的
+    // 清理；DELETE 也走 fetchJsonRace 限时，裸 fetch 黑洞时会吊住 socket 约 5 分钟
     const cleanupSession = () => {
-      fetch(`${TRAE_SOLO_BASE}/chat_sessions/${chatSessionId}`, {
+      fetchJsonRace(`${TRAE_SOLO_BASE}/chat_sessions/${chatSessionId}`, {
         method: 'DELETE',
         headers: makeHeaders(token),
+        timeoutMs: 10_000,
       }).catch(() => {});
     };
 
@@ -471,6 +494,7 @@ export async function handleGateway(req, res) {
     }
 
     if (!eventsRes.ok || !eventsRes.body) {
+      drainErr(eventsRes);
       cleanupSession();
       // 事件流被 429（会话建好了、拉流被限流）同样按阶梯冷却——不判的话这个号
       // 下一轮会话创建仍从 30 秒档起算，继续撞限流

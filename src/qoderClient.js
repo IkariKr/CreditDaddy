@@ -55,8 +55,10 @@ export async function exchangePatToJobToken(pat, isCn = false) {
     const text = await res.text().catch(() => '');
     throw new Error(`PAT 兑换失败: HTTP ${res.status} ${text.slice(0, 120)}`);
   }
-  const data = await res.json();
-  if (!data.token) throw new Error('PAT 兑换未返回 job token');
+  // 200 但 body 非 JSON（边缘节点 HTML 拦截页/空响应）：裸 res.json() 抛 SyntaxError，
+  // resolveToken 的兜底 catch 会把它报成「token 不可用」，用户冤枉地去重导 token
+  const data = await res.json().catch(() => null);
+  if (!data?.token) throw new Error('PAT 兑换未返回 job token（响应非 JSON 或缺 token）');
   return { jobToken: data.token, expiresAt: data.expires_at || null };
 }
 
@@ -84,7 +86,9 @@ export async function fetchUserinfo(account) {
     preferProxy: account.provider === 'qoder',
   });
   if (!res.ok) throw new Error(`userinfo HTTP ${res.status}`);
-  return res.json();
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== 'object') throw new Error(`userinfo 响应非 JSON（HTTP ${res.status}）`);
+  return data;
 }
 
 /** 查询配额/积分用量 */
@@ -97,7 +101,9 @@ export async function fetchQuotaUsage(account) {
   });
   if (res.status === 401 || res.status === 403) throw new Error(`鉴权失败 (HTTP ${res.status})，token 可能已过期`);
   if (!res.ok) throw new Error(`quota HTTP ${res.status}`);
-  return res.json();
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== 'object') throw new Error(`quota 响应非 JSON（HTTP ${res.status}）`);
+  return data;
 }
 
 function webHeaders(cookie, provider) {
@@ -135,7 +141,9 @@ export async function fetchUsageDetail(account) {
     throw err;
   }
   if (!res.ok) throw new Error(`usage detail HTTP ${res.status}`);
-  return res.json();
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== 'object') return null;   // 结构异常按「无明细」回落聚合数据
+  return data;
 }
 
 /**
@@ -174,7 +182,8 @@ async function getCampaigns(base, headers) {
     throw err;
   }
   if (!res.ok) throw new Error(`活动列表 HTTP ${res.status}`);
-  const payload = await res.json();
+  const payload = await res.json().catch(() => null);
+  if (!payload || typeof payload !== 'object') throw new Error(`活动列表响应非 JSON（HTTP ${res.status}）`);
   return {
     uid: typeof payload?.uid === 'string' ? payload.uid : null,
     campaigns: Array.isArray(payload?.campaigns) ? payload.campaigns : [],

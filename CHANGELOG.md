@@ -27,6 +27,21 @@ Theme: Trae auto check-in fix (#38, prefer the device id registered at login) + 
 
 - **fnOS 桌面/APP 走统一网关入口（issue #39，方案 2）**：从公网域名（反向代理 / Cloudflare Tunnel 等 HTTPS 入口）打开 fnOS 桌面图标或飞牛手机 APP 时白屏——窗口按「当前访问主机名」拼 `http://域名:47860`，而 HTTPS 入口只服务 443，该地址不可达（内网 LAN 一切正常）。现 fpk 改走 **fnOS 统一网关**：`ui/config` 的窗口声明 `gatewaySocket`（app.sock）与前缀 `/app/creditdaddy`，manifest 声明 `micro_app`，新增 `gateway-proxy.mjs`（Node 零依赖）把网关转来的请求剥前缀、改写 Host/Origin/Referer 后转发本机 47860——**公网 443 直达，与页面同源，无需用户任何配置**；Anthropic SSE 长流（/gateway/*）流式透传。直连 `http://LAN_IP:47860` 的旧路径完全不受影响；反代代理起不来也不挡主服务。已验证：前缀剥离 / Host+Origin 改写 / SSE 完整流 / POST body 原样（冒烟脚本三路全过）。
 
+### 🛡 稳健性加固（2026-10-29 全量审计）
+
+对全部 25 个运行时文件做了一轮鲁棒性审计（并发/资源泄漏/错误路径/无界增长），落地以下修复：
+
+- **网关补上「优雅断开」观察（三个网关）**：客户端在响应头到达前取消（cc CLI 里 Ctrl+C / 点停止）只触发 `res 'close'`、不触发 `req 'close'`——此前唯一的断开钩子接不到这种断开，整个重试循环照跑：ZCode 空转验证码求解与账号轮换、Trae 照样创建 SOLO 会话真烧额度、MiniMax 白跑。补上 `res 'close'` 钩子后取消即中止。
+- **Trae 网关错误响应体不再滞留**：401 / 429 / 事件流失败的响应 body 此前既不读也不取消，每条把连接钉到上游关闭或 ~300s 超时——429 风暴时一次补全泄漏最多 5 条 socket。统一 `cancel()` 丢弃；会话清理 DELETE 也改走 10s 限时通道（裸 fetch 黑洞时吊 5 分钟）。
+- **ZCode / MiniMax 网关流中断补 error 帧**：上游中途断流此前只 debug 日志 + 静默 `res.end()`——客户端只见无 `message_stop` 的裸 EOF，报「流意外结束」没头绪。现按 Anthropic 协议补一帧 `event: error` 带原因；客户端主动断开仍静默收尾。
+- **经代理的响应流式化**：代理通道此前把整个 body 收完才 resolve——「代理优先」模式下网关补全在整个生成期间一个字节都到不了客户端，首 token 超时必然误报。现改 PassThrough 逐块透传，墙钟上限继续管住流式 body（与直连同口径）。
+- **10Router 配置读失败不再被默认值静默覆盖**：`loadConfig` 此前任何读错误（杀软/同步盘瞬时占用、JSON 损坏）都返回默认配置，下一个写请求会把「默认值 + 本轮改动」整份落盘——端点、key、同步水位全没，且 catpaw 用量水位清零导致历史用量整段重发。现仅文件不存在用默认值；损坏走 `.bak` 恢复（保存前自动维护）；其余错误上抛跳过落盘。
+- **CLI 变更命令与运行中的 daemon 互斥**：`withAccounts` 串行队列只在单进程内有效——daemon 签到轮刚轮换的 refreshToken 会被 CLI 进程基于旧快照的整份写回冲掉（一次性 refresh 当场作废，凭据链死）。`add / import / checkin / remove / scan` 检测到后台实例运行即拒绝并提示改走面板或先 `stop`。
+- **面板轮询与请求生命周期**：30s/10s/5min 轮询加单飞守卫（daemon 卡住时不再无限堆积，恢复后不齐发踩踏）；`api()` 加挂钟超时（默认 2 分钟，全量签到 / 10R 推送等慢操作显式放宽到 5-10 分钟），半开连接不再吊死轮询链；额度批量加载的过期结果不再覆盖新发起的 live 刷新值；免费页站点卡拖拽监听改启动时绑一次（此前每次渲染累积，一次 drop 触发 N 次重排）；设备码登录轮询容忍瞬时失败（连续 5 次才终止，daemon 忙时的 502 不再毁掉整个授权流程）。
+- **桌面壳（Electron）**：启动安装器的 `spawn` 补 `error` 事件兜底（杀软隔离安装包时不再 uncaughtException 掀翻主进程）；`shell-open-external` 只放行 https 外链；GitHub 更新检查 15s 超时、安装包下载 60s 空闲掐断（墙钟放行大文件，黑洞不再卡死更新弹窗）；保存密码弹窗改单趟 token 替换（密码里恰好含占位符字面量时不再被改写后入库）；验证码窗口 JSON 注入修正。
+- **fnOS 统一网关代理**：压缩响应不再改写 HTML（gzip 解码再替换必然乱码）；客户端断开即销毁上游连接（反复开关页面不再累积挂起的 SSE socket）；`stop` / 卸载对网关代理进程按脚本名兜底清理（pid 文件丢失不再留孤儿进程占着 app.sock）。
+- **杂项**：Qoder 暂存网页会话 48h TTL（过期凭据不再永久躺在 settings.json）；面板密码限流与配额刷新回调的按 IP 计数 Map 周期清扫（公网扫描器来源不再只进不出）；catpaw 用量水位清理回溯窗（410 天）外的死账；`atomicWrite` 首写失败清掉半截临时文件；删除账号时同步清三个网关的冷却/权重/粘滞残留（`forgetAccount`）；Qoder 对「200 但非 JSON」响应报明确错误（不再让 SyntaxError 冒充「token 不可用」误导重导凭据）；ZCode 手动领取轮结束时若自动领取已开启则补排调度（此前自动领取会静默死掉）；设置接口不再因签到字段提前返回而漏处理同请求里的密码修改；豆包客户端死代码清理。
+
 ### 🌐 其它
 
 - 网页会话站点 label 与产品描述补齐「豆包」；CHANGELOG.en 补 1.6.1 / 1.6.2 英文段（英文面板「更新日志」直接显示英文）。

@@ -287,7 +287,17 @@ async function collectCatpaw(accounts, modelLabel, sentTotals = {}) {
   if (failed && !out.length) throw lastErr;
   if (failed) notes.push(`${failed} 个妙手账号用量拉取失败：${lastErr && lastErr.message}`);
   out.sort((x, y) => (x.timestamp < y.timestamp ? -1 : 1));
-  return { entries: out, notes, nextSentTotals: { ...sentTotals, ...nextSent } };
+  // 水位只服务 400 天回溯窗的差量记账：窗口外的桶永远不会再被读到，
+  // 留着只是让 tenrouter.json 每小时白白重写几千条死账（多留 10 天余量，
+  // 不剪回溯窗边界附近的活水位——剪早了那桶会被当新差量整段重发）
+  const minDate = localDateKey(new Date(now - 410 * 86400e3));
+  const merged = {};
+  for (const [key, v] of Object.entries({ ...sentTotals, ...nextSent })) {
+    const date = String(key).split('|')[1];
+    if (date && date < minDate) continue;
+    merged[key] = v;
+  }
+  return { entries: out, notes, nextSentTotals: merged };
 }
 
 /** 本机 10Router/9Router 的 usageHistory 行 → 导入行（同 10router-sync 插件 --source 10r）。

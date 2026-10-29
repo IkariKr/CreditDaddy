@@ -26,4 +26,6 @@ if [ -f "${DATA_DIR}/creditdaddy.pid" ]; then
     rm -f "${DATA_DIR}/creditdaddy.pid"
 fi
 pkill -f "bin/creditdaddy.js daemon" 2>/dev/null || true
+# 统一网关反代一并停（pid 文件可能已随数据目录清理，按脚本名兜底）
+pkill -f "gateway-proxy.mjs" 2>/dev/null || true
 exit 0

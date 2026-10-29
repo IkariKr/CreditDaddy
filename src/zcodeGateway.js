@@ -109,6 +109,18 @@ function markRateLimited(id) {
 function resetCoolingStreak(id) { coolingStreak.delete(id); }
 
 /**
+ * 账号被删除时清掉它在各轮换 Map 里的残留（daemon DELETE /api/accounts/:id 调用）。
+ * 账号 id 每次导入都是新 UUID，删了不清理的话这些条目永远不会被任何人再触碰。
+ */
+export function forgetAccount(id) {
+  cooling.delete(id);
+  coolingStreak.delete(id);
+  dead.delete(id);
+  quotaCache.delete(id);
+  for (const [k, v] of sessionSticky) if (v?.accountId === id) sessionSticky.delete(k);
+}
+
+/**
  * 测试专用：把某账号的冷却截止拨到指定时间戳（0 = 立即到期，用于快进冷却窗口）。
  * 生产不走这里——冷却窗口只能自然到期。
  */
@@ -402,6 +414,12 @@ function stickyFor(sessionId) {
 /** 会话粘住的号仍可用才粘；否则落到轮转队首，由调用方重新绑定 */
 function touchSticky(sessionId, accountId) {
   if (!sessionId) return;
+  // 每段对话一个新 session id，安静会话的条目只有等它自己再被查到才会过期——
+  // 长期运行的网关上单调增长。超阈值时整表清一遍过期项。
+  if (sessionSticky.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of sessionSticky) if (now - (v?.at || 0) >= SESSION_STICKY_TTL_MS) sessionSticky.delete(k);
+  }
   sessionSticky.set(sessionId, { accountId, at: Date.now() });
 }
 /** 从上游 JSON 信封里取业务码；字符串数字（"3007"）也认，取不到返回 null */
@@ -563,6 +581,9 @@ export async function handleGateway(req, res) {
   // （MaxListenersExceededWarning + 泄漏）。
   const clientAbort = new AbortController();
   req.once('close', () => { if (!res.writableEnded) clientAbort.abort(); });
+  // 优雅断开（客户端 fetch abort 在上游响应前）只触发 res 'close'，不触发 req 'close'
+  // ——少这一个钩子，Ctrl+C 后整个重试循环（含验证码求解、账号轮换）还在为已死的客户端空跑
+  res.once('close', () => { if (!res.writableEnded) clientAbort.abort(); });
   // 首发不带验证码（客户端真实流量多数直过）；上游 3007/403 时求解并在此后的
   // 尝试上挂新 token（zcode-api 同策略）。provider 为 null（NAS/CLI）时首过路径依然可用。
   let captcha = null;
@@ -680,8 +701,17 @@ export async function handleGateway(req, res) {
           }
         }
       } catch (e) {
-        // 客户端主动断开（点停止/换一句）就会在这里结束——属正常收尾，不是故障，降为 debug
-        logger.debug('ZCODE-GW', '流式转发中断:{err}', { err: e.message });
+        if (clientAbort.signal.aborted) {
+          // 客户端主动断开（点停止/换一句）就会在这里结束——属正常收尾，不是故障，降为 debug
+          logger.debug('ZCODE-GW', '流式转发中断:{err}', { err: e.message });
+        } else {
+          // 上游中途断了：直接 res.end() 是无 message_stop 的裸 EOF，客户端只会报
+          // 「流意外结束」——按 Anthropic 协议补一帧 error 事件，把原因带出去
+          logger.warn('ZCODE-GW', '上游流中断:{err}', { err: e.message });
+          try {
+            res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: `上游流中断：${e.message}` } })}\n\n`);
+          } catch { /* 客户端已不在 */ }
+        }
       }
       res.end();
       return true;

@@ -146,6 +146,8 @@ stop() {
         kill "$(cat "${GW_PID}")" 2>/dev/null || true
         rm -f "${GW_PID}"
     fi
+    # pid 文件丢失（异常退出/手动清数据目录）时进程会残留并占着 app.sock，按脚本名兜底清
+    pkill -f "gateway-proxy.mjs" 2>/dev/null || true
     [ -n "${GW_SOCK}" ] && rm -f "${GW_SOCK}" 2>/dev/null || true
     echo "stopped"
 }

@@ -70,8 +70,9 @@ const server = http.createServer((req, res) => {
     (up) => {
       const ct = (up.headers['content-type'] || '').toLowerCase();
       // 当响应为 HTML 时，重写内部绝对路径为网关前缀（参照 dsh-dashboard 做法），
-      // 彻底解决 fnOS iframe 桌面窗口内请求 /api/* 丢前缀导致 404 的问题
-      if (ct.includes('text/html') && GATEWAY_PREFIX) {
+      // 彻底解决 fnOS iframe 桌面窗口内请求 /api/* 丢前缀导致 404 的问题。
+      // 压缩响应（gzip/br 等）解码成 utf8 再替换必然产生乱码——按原文透传
+      if (ct.includes('text/html') && GATEWAY_PREFIX && !up.headers['content-encoding']) {
         const chunks = [];
         up.on('data', (c) => chunks.push(c));
         up.on('end', () => {
@@ -106,6 +107,10 @@ const server = http.createServer((req, res) => {
   } else {
     upstream.end();
   }
+  // 客户端中途断开（关标签页/刷新）时释放对后端的连接——SSE 长响应不主动
+  // destroy 会一直挂着，反复开关页面累积泄漏上游 socket
+  req.on('error', () => upstream.destroy());
+  res.on('close', () => { if (!upstream.destroyed) upstream.destroy(); });
   upstream.on('error', (e) => {
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });

@@ -59,7 +59,14 @@ export async function atomicWrite(file, content, { retries = 6 } = {}) {
     path.dirname(file),
     `.tmp-${path.basename(file)}-${crypto.randomBytes(4).toString('hex')}`
   );
-  await fs.writeFile(tmp, content, { mode: 0o600 });
+  try {
+    await fs.writeFile(tmp, content, { mode: 0o600 });
+  } catch (e) {
+    // 首写就失败（ENOSPC/EPERM）：清掉半截临时文件再上抛，否则数据目录里
+    // 每次失败都多一个 .tmp-* 残骸
+    await fs.unlink(tmp).catch(() => {});
+    throw e;
+  }
   const doRename = renameImpl || ((a, b) => fs.rename(a, b));
   let transientRetries = 0;
   try {

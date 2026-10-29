@@ -196,6 +196,7 @@ async function fetchLatestReleaseFromGitHub() {
   const repo = m[1] + '/' + m[2].replace(/\.git$/, '');
   const res = await net.fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
     headers: { Accept: 'application/vnd.github+json' },
+    signal: AbortSignal.timeout(15_000),   // 静默丢包的防火墙下不给超时会吊死更新弹窗
   });
   if (!res.ok) throw new Error(`GitHub API 返回 HTTP ${res.status}`);
   const rel = await res.json();
@@ -206,7 +207,7 @@ async function fetchLatestReleaseFromGitHub() {
   const biAsset = (rel.assets || []).find((a) => a.name === 'build-info.json');
   if (biAsset) {
     try {
-      const r = await net.fetch(biAsset.browser_download_url);
+      const r = await net.fetch(biAsset.browser_download_url, { signal: AbortSignal.timeout(15_000) });
       if (r.ok) relBuild = await r.json();
     } catch { relBuild = null; }
   }
@@ -233,13 +234,33 @@ async function downloadSetupInstaller(rel, onProgress, signal) {
     const reader = res.body.getReader();
     const chunks = [];
     let got = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(Buffer.from(value));
-      got += value.length;
-      if (onProgress) onProgress(got, total);
+    // 空闲 deadline：大安装包整体可能下载很久（不能一刀切超时），但连续 60s 一个字节
+    // 都没有就是连接黑洞了——墙钟放行、静默掐断，弹窗回到 error 态而不是永远「下载中」。
+    // 注意 reader.cancel 会把挂起的 read 按 {done:true} 收尾，必须用 stalled 标志区分
+    // 「真下完」和「掐断」，否则截断的安装包会被当完整文件（哈希缺失时更是直接安装）
+    const IDLE_MS = 60_000;
+    let stalled = null;
+    let idle = setTimeout(() => {
+      stalled = new Error(Tt('下载中断：连接 60 秒无数据'));
+      try { reader.cancel(stalled); } catch { /* 已结束 */ }
+    }, IDLE_MS);
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        clearTimeout(idle);
+        if (done) break;
+        idle = setTimeout(() => {
+          stalled = new Error(Tt('下载中断：连接 60 秒无数据'));
+          try { reader.cancel(stalled); } catch { /* 已结束 */ }
+        }, IDLE_MS);
+        chunks.push(Buffer.from(value));
+        got += value.length;
+        if (onProgress) onProgress(got, total);
+      }
+    } finally {
+      clearTimeout(idle);
     }
+    if (stalled) throw stalled;
     buf = Buffer.concat(chunks);
   } else {
     buf = Buffer.from(await res.arrayBuffer());
@@ -373,7 +394,13 @@ async function updateUiPrimary() {
     const rel = updateState.fallback;
     if (rel && rel.installerPath) {
       try {
-        spawn(rel.installerPath, [], { detached: true, stdio: 'ignore' }).unref();
+        const child = spawn(rel.installerPath, [], { detached: true, stdio: 'ignore' });
+        // spawn 的 ENOENT/EPERM 走异步 'error' 事件，try/catch 接不到——不接的话是
+        // uncaughtException 直接掀翻主进程（恰好死在「安装更新」这一步）
+        child.on('error', (err) => {
+          pushUpdateUi({ phase: 'error', error: Tt('启动安装程序失败：{err}（可手动运行 {file}）', { err: String((err && err.message) || err), file: rel.installerPath }) });
+        });
+        child.unref();
         quitting = true;
         app.quit();
       } catch (err) {
@@ -470,7 +497,7 @@ function zcodePlanCompletion({ captchaCfg, jwt, rawBody, headers = {} }) {
     const timer = setTimeout(() => { if (!settled) { settled = true; if (capWin && !capWin.isDestroyed()) capWin.destroy(); reject(new Error(Tt('网关补全超时（120s）'))); } }, 120000);
     const done = (fn, arg) => { if (!settled) { settled = true; clearTimeout(timer); if (capWin && !capWin.isDestroyed()) capWin.destroy(); fn(arg); } };
 
-    const jsonSafe = (o) => JSON.stringify(o).replace(/</g, '<');
+    const jsonSafe = (o) => JSON.stringify(o).replace(/</g, '\\u003c');
     capWin = new BrowserWindow({
       show: false, width: 460, height: 600, title: Tt('ZCode 额度网关（后台验证）'),
       icon: iconPath(), autoHideMenuBar: true,
@@ -975,12 +1002,15 @@ document.getElementById('no').addEventListener('click', () => window.close());
 }));
 </script>
 </body></html>`;
-  const filled = html
-    .replace('PW_TITLE', esc(payload.isUpdate ? Tt('更新密码？') : Tt('保存密码？')))
-    .replace('SITE_VAL', esc(payload.origin))
-    .replace('USER_VAL', esc(payload.username))
-    .replace('PASS_VAL', esc(payload.password))
-    .replace('SAVE_LBL', esc(payload.isUpdate ? Tt('更新') : Tt('保存')));
+  // 单趟替换：链式 .replace 会把前一个替换值再交给后续 token 扫描——
+  // 密码里恰好含「SAVE_LBL」这类字面量时会被改写成按钮文案，保存的就是错的密码
+  const filled = html.replace(/PW_TITLE|SITE_VAL|USER_VAL|PASS_VAL|SAVE_LBL/g, (tok) => ({
+    PW_TITLE: esc(payload.isUpdate ? Tt('更新密码？') : Tt('保存密码？')),
+    SITE_VAL: esc(payload.origin),
+    USER_VAL: esc(payload.username),
+    PASS_VAL: esc(payload.password),
+    SAVE_LBL: esc(payload.isUpdate ? Tt('更新') : Tt('保存')),
+  })[tok]);
   savePwWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(filled))
     .catch((e) => { console.log('pw save prompt load failed: ' + e.message); try { savePwWin.close(); } catch { /* ignore */ } });
   savePwWin.on('closed', () => { savePwWin = null; savePwPending = null; });
@@ -1430,7 +1460,11 @@ function registerAuthWindowIpc() {
   ipcMain.handle('update-install', async () => { await updateUiPrimary(); return updateUiState(); });
   ipcMain.handle('update-open-releases', () => { try { shell.openExternal((daemonInfo.homepage || DEFAULT_HOMEPAGE) + '/releases'); } catch {} });
   // 打开外部 URL（捐赠按钮用）
-  ipcMain.handle('shell-open-external', (_, url) => { try { shell.openExternal(url); } catch {} });
+  ipcMain.handle('shell-open-external', (_, url) => {
+    // 与同文件其他 handler 的校验纪律对齐：只放行 https 外链，file:///smb:// 等一概不交给系统
+    if (!/^https:\/\//i.test(String(url || ''))) return;
+    try { shell.openExternal(String(url)); } catch {}
+  });
   // 唤起小窗显示更新日志摘要（任何入口统一走 openChangelogBrief；IPC 只注册一次）
   ipcMain.handle('open-changelog-brief', () => openChangelogBrief());  ipcMain.handle('open-auth-window', async (_e, url, opts) => {
     if (typeof url !== 'string' || !url.toLowerCase().startsWith('https://')) {

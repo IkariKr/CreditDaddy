@@ -97,7 +97,6 @@ export async function fetchDoubaoStatus(cookie, uid = '') {
   let body = null;
   try { body = JSON.parse(await res.text()); } catch { /* 非 JSON */ }
   if (!body || typeof body !== 'object') return { auth: false, code: `HTTP ${res.status}`, checkin: null, totalAmount: null };
-  if (!body || typeof body !== 'object') return { auth: res.status !== 401, code: `HTTP ${res.status}`, checkin: null, totalAmount: null };
   const code = Number(body.code);
   if (code === LOGIN_INVALID) return { auth: false, code, checkin: null, totalAmount: null };
   const task = findCheckinTask(body);

@@ -44,20 +44,37 @@ const SOURCES_VERSION = 3;   // 3: 新增 10Router 本机实例来源（10r）
 
 export function loadConfig() {
   try {
-    const c = JSON.parse(fs.readFileSync(FILE(), 'utf8'));
-    const sync = { ...DEFAULT_CONFIG.sync, ...(c.sync || {}) };
-    const quotaPush = { ...DEFAULT_CONFIG.quotaPush, ...(c.quotaPush || {}) };
-    const accountSync = { ...DEFAULT_CONFIG.accountSync, ...(c.accountSync || {}) };
-    // 旧配置里的 sources 是保存时的快照，会盖掉新增来源（妙手因此被静默关掉）；
-    // 只把此后新增的来源默认并入，用户手动关掉的保持关闭。
-    const savedVersion = Number(c.sync?.sourcesVersion) || 1;
-    if (savedVersion < SOURCES_VERSION) {
-      sync.sources = (Array.isArray(sync.sources) ? [...sync.sources] : [...SOURCES]);
-      for (const s of SOURCES) if (!LEGACY_SOURCES.includes(s) && !sync.sources.includes(s)) sync.sources.push(s);
-      sync.sourcesVersion = SOURCES_VERSION;
+    return normalizeLoaded(JSON.parse(fs.readFileSync(FILE(), 'utf8')));
+  } catch (e) {
+    // 只有「文件不存在」才回默认值。EPERM/EBUSY（杀软/同步盘瞬时占用）或 JSON 损坏时
+    // 返回默认对象，下一个 withConfig 会把「默认值 + 本轮改动」整份写回——端点、key、
+    // 同步水位全部被静默抹掉，且 catpaw 的 sentTotals 清零会让历史用量整段重发。宁可报错。
+    if (e.code === 'ENOENT') return structuredClone(DEFAULT_CONFIG);
+    if (e instanceof SyntaxError) {
+      try {
+        const bak = JSON.parse(fs.readFileSync(FILE() + '.bak', 'utf8'));
+        console.error('tenrouter: 配置文件损坏,已用备份恢复 ' + FILE() + '.bak');
+        return normalizeLoaded(bak);
+      } catch { /* 备份也没有/同坏——按原错误上抛，禁止用默认值覆盖现场 */ }
     }
-    return { ...DEFAULT_CONFIG, ...c, sync, quotaPush, accountSync, syncState: c.syncState || {} };
-  } catch { return structuredClone(DEFAULT_CONFIG); }
+    throw new Error(`读取 ${FILE()} 失败: ${e.message}`);
+  }
+}
+
+// loadConfig 的归一化（旧配置 sources 快照迁移等，主文件与 .bak 同一形状）
+function normalizeLoaded(c) {
+  const sync = { ...DEFAULT_CONFIG.sync, ...(c.sync || {}) };
+  const quotaPush = { ...DEFAULT_CONFIG.quotaPush, ...(c.quotaPush || {}) };
+  const accountSync = { ...DEFAULT_CONFIG.accountSync, ...(c.accountSync || {}) };
+  // 旧配置里的 sources 是保存时的快照，会盖掉新增来源（妙手因此被静默关掉）；
+  // 只把此后新增的来源默认并入，用户手动关掉的保持关闭。
+  const savedVersion = Number(c.sync?.sourcesVersion) || 1;
+  if (savedVersion < SOURCES_VERSION) {
+    sync.sources = (Array.isArray(sync.sources) ? [...sync.sources] : [...SOURCES]);
+    for (const s of SOURCES) if (!LEGACY_SOURCES.includes(s) && !sync.sources.includes(s)) sync.sources.push(s);
+    sync.sourcesVersion = SOURCES_VERSION;
+  }
+  return { ...DEFAULT_CONFIG, ...c, sync, quotaPush, accountSync, syncState: c.syncState || {} };
 }
 
 // 配置落盘走 store.atomicWrite：Windows 上杀软/同步盘瞬时占文件会直接 EPERM，
@@ -65,7 +82,13 @@ export function loadConfig() {
 async function saveConfig(c) {
   fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
   const { atomicWrite } = await import('./store.js');
-  await atomicWrite(FILE(), JSON.stringify(c, null, 2));
+  const file = FILE();
+  // 同 saveAccounts：写前留一份 .bak，主文件损坏（断电半写/杀软截断）时 loadConfig 有路可回
+  try {
+    const existing = fs.readFileSync(file, 'utf8');
+    if (existing.trim().length > 2) await atomicWrite(file + '.bak', existing);
+  } catch { /* 主文件不存在/读不了就没有可备份的 */ }
+  await atomicWrite(file, JSON.stringify(c, null, 2));
 }
 
 // 读改写串行，避免面板保存与后台同步互相覆盖

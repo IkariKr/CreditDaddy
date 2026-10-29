@@ -190,6 +190,10 @@ function runZcodeTick(accountIds, { force = false } = {}) {
       return { results, summary: zcodeLastTick.summary };
     } finally {
       zcodeTicking = false;
+      // 手动轮（pollZcodeNow）结束时不会像定时轮那样 .finally 里补排下一个 tick；
+      // 若手动轮进行中用户刚开启自动领取，syncZcodeScheduler 又因 zcodeTicking=true
+      // 跳过了排程——这里兜底补排（内部先清旧句柄，重复调用无害），否则自动领取静默死掉
+      if (autoClaimEnabled()) scheduleZcodeNextTick();
     }
   });
   zcodeQueue = run.catch(() => {});

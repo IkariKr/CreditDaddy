@@ -21,6 +21,7 @@ import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import tls from 'node:tls';
+import { PassThrough } from 'node:stream';
 import { execFile } from 'node:child_process';
 import { FETCH_TIMEOUT_MS } from './constants.js';
 import { defaultSecret, safeDecrypt } from './zcrypto.js';
@@ -237,10 +238,20 @@ async function fetchViaProxy(url, { method = 'GET', headers = {}, body = null, t
     }
     const done = (fn, arg) => { clearTimeout(deadline); signal?.removeEventListener('abort', onAbort); fn(arg); };
     const req = (isHttps ? https : http).request(requestOpts, (res) => {
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => done(resolve, new Response(Buffer.concat(chunks), { status: res.statusCode, headers: res.headers })));
-      res.on('error', (e) => done(reject, e));
+      // 流式转发：经代理的响应（含网关 SSE 补全）逐块到达，而不是整包收完才 resolve——
+      // 此前代理优先模式下客户端在整个生成期间一个字节都收不到，首 token 超时必然误报
+      const pass = new PassThrough();
+      res.pipe(pass);
+      res.on('error', (e) => pass.destroy(e));
+      // close 在正常收尾与异常中断时都会触发；complete=false = 没收完就被掐
+      // （abort/超时销毁 socket 后 res 不一定发 'error'）。deadline 也在这里才清：
+      // 墙钟上限必须继续管住流式 body，与直连路径（AbortSignal 管到 body 结束）同口径
+      res.on('close', () => {
+        clearTimeout(deadline);
+        signal?.removeEventListener('abort', onAbort);
+        if (!res.complete) pass.destroy(new Error('连接中断'));
+      });
+      resolve(new Response(pass, { status: res.statusCode, headers: res.headers }));
     });
     req.on('error', (e) => done(reject, e));
     req.on('timeout', () => req.destroy(new Error('请求超时')));

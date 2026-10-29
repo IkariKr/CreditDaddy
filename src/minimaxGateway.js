@@ -69,6 +69,15 @@ function credFingerprint(a) {
   return `${a.token || ''}|${a.refreshToken || ''}`;
 }
 
+/** 账号被删除时清掉它在各轮换 Map 里的残留（daemon DELETE /api/accounts/:id 调用） */
+export function forgetAccount(id) {
+  cooling.delete(id);
+  coolingStreak.delete(id);
+  dead.delete(id);
+  weights.delete(id);
+  if (stickyId === id) stickyId = null;
+}
+
 function markCooling(id, ms = ACCOUNT_COOLING_MS) {
   cooling.set(id, Date.now() + ms);
 }
@@ -296,6 +305,8 @@ export async function handleGateway(req, res) {
   const attempted = [];
   const clientAbort = new AbortController();
   req.once('close', () => { if (!res.writableEnded) clientAbort.abort(); });
+  // 优雅断开（客户端 fetch abort 在上游响应前）只触发 res 'close'，不触发 req 'close'
+  res.once('close', () => { if (!res.writableEnded) clientAbort.abort(); });
 
   for (let i = 0; i < Math.min(MAX_ATTEMPTS, queue.length); i++) {
     const account = queue[i];
@@ -376,8 +387,16 @@ export async function handleGateway(req, res) {
             }
           }
         } catch (e) {
-          // 客户端主动断开（点停止/换一句）属正常收尾，不是故障
-          logger.debug('MINIMAX-GW', '流式转发中断:{err}', { err: e.message });
+          if (clientAbort.signal.aborted) {
+            // 客户端主动断开（点停止/换一句）属正常收尾，不是故障
+            logger.debug('MINIMAX-GW', '流式转发中断:{err}', { err: e.message });
+          } else {
+            // 上游中途断了：补一帧 Anthropic error 事件再收尾，别让客户端只见裸 EOF
+            logger.warn('MINIMAX-GW', '上游流中断:{err}', { err: e.message });
+            try {
+              res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: `上游流中断：${e.message}` } })}\n\n`);
+            } catch { /* 客户端已不在 */ }
+          }
         }
         res.end();
       } else {

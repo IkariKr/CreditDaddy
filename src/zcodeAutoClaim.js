@@ -33,6 +33,9 @@ export function setZcodeCaptchaProvider(fn) { captchaProvider = typeof fn === 'f
 export function hasZcodeCaptchaProvider() { return Boolean(captchaProvider); }
 export function getZcodeCaptchaProvider() { return captchaProvider; }
 
+/** 账号被删除时清掉额满暂休缓存（daemon DELETE /api/accounts/:id 调用；落盘份随账号一起删） */
+export function forgetAccount(id) { snoozeUntil.delete(id); }
+
 const grantsText = (plan) => (plan.grants && plan.grants.length ? plan.grants.join('；') : '');
 
 /**

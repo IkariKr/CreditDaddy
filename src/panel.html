@@ -1283,7 +1283,18 @@ async function api(p, opts = {}, attempt = 0) {
     o.body = JSON.stringify(opts.json);
   }
   delete o.json;
-  const res = await fetch(resolveApiPath(p), o);
+  // 挂钟超时：daemon 卡死 / 休眠唤醒后半开连接时 fetch 永不落定，30s 轮询链会无限堆积。
+  // 慢操作（全量签到、10R 推送/同步的同步长请求）用 opts.timeoutMs 放宽
+  const timeoutMs = Number(opts.timeoutMs) || 120_000;
+  let res;
+  try {
+    res = await fetch(resolveApiPath(p), { ...o, signal: opts.signal || AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    if (e && (e.name === 'TimeoutError' || /timeout|timed out/i.test(e.message || ''))) {
+      throw new Error(T('请求超时') + '（' + Math.round(timeoutMs / 1000) + 's）: ' + p);
+    }
+    throw e;
+  }
   const data = await res.json().catch(() => ({}));
   // 密码缺失 / 不正确：弹框要密码，输入后自动重试这次请求（不再只报一句错误）
   if (res.status === 401 && data.code === 'PANEL_KEY' && attempt < 3) {
@@ -2773,20 +2784,8 @@ function renderFreePool() {
       + accRows
       + '</div>';
   }).join('');
-  bindCardDrag(body, {
-    kind: 'free-site',
-    onReorder: (drag, targetId) => {
-      if (!drag.id) return;
-      const ids = state.freeOrder.slice();
-      const from = ids.indexOf(drag.id);
-      if (from >= 0) ids.splice(from, 1);
-      const ti = ids.indexOf(targetId);
-      ids.splice(ti < 0 ? ids.length : ti, 0, drag.id);
-      state.freeOrder = ids;
-      saveFreeOrder();
-      renderFreePool();
-    },
-  });
+  // 拖拽绑定已上移到启动区（bindCardDrag($('free-pool-body'))）：容器元素持久、
+  // onReorder 闭包在触发时才读 state，渲染函数里重复绑定只会让监听器越积越多
 }
 
 function renderCookieSites() {
@@ -2907,7 +2906,7 @@ async function trSyncAccountsFromModal() {
   tr.accountsSyncing = true;
   renderTenrouter();
   try {
-    const r = await api('/api/tenrouter/sync-accounts', { method: 'POST', json: pw ? { adminPassword: pw } : {} });
+    const r = await api('/api/tenrouter/sync-accounts', { method: 'POST', json: pw ? { adminPassword: pw } : {}, timeoutMs: 300_000 });
     msg.textContent = r.summary || '';
     toast(r.summary, !/失败/.test(r.summary || ''));
     if (pw) { await loadTrConfig(); $('am-pw').value = ''; }
@@ -2966,7 +2965,7 @@ $('btn-free-sync-10r')?.addEventListener('click', async () => {
     // 只推网页会话渠道的额度卡（webSessionOnly）——账号连接同步不在这里做：那是
     // 10Router 页「账号管理」弹窗的职责（还带渠道开关）；本机凭据线（如 minimax-free）
     // 也不搭车，本页的「同步」语义就只管网页会话卡。
-    const r = await api('/api/tenrouter/push-quota', { method: 'POST', json: { webSessionOnly: true } });
+    const r = await api('/api/tenrouter/push-quota', { method: 'POST', json: { webSessionOnly: true }, timeoutMs: 300_000 });
     const failed = (r.results || []).filter((x) => x.status === 'failed');
     if (failed.length) toast(T('额度卡部分推送失败：') + failed.map((x) => x.source + '（' + x.error + '）').join('；'), false);
     else if ((r.results || []).length) toast(T('额度卡已推送到 10Router 配额页'), true);
@@ -3009,7 +3008,7 @@ $('free-settings-push-now')?.addEventListener('click', async () => {
   btn.disabled = true;
   try {
     // 与本页「同步到 10Router」同口径：只推网页会话渠道的额度卡
-    const r = await api('/api/tenrouter/push-quota', { method: 'POST', json: { webSessionOnly: true } });
+    const r = await api('/api/tenrouter/push-quota', { method: 'POST', json: { webSessionOnly: true }, timeoutMs: 300_000 });
     const failed = (r.results || []).filter((x) => x.status === 'failed');
     if (failed.length) toast(T('额度卡部分推送失败：') + failed.map((x) => x.source + '（' + x.error + '）').join('；'), false);
     else if ((r.results || []).length) toast(T('额度卡已推送到 10Router 配额页'), true);
@@ -3203,7 +3202,7 @@ async function loadTrQuotas(force) {
 }
 async function trSync() {
   tr.syncing = true; render();
-  try { const r = await api('/api/tenrouter/sync', { method: 'POST' }); toast(r.summary, !r.results.some((x) => x.status === 'failed')); }
+  try { const r = await api('/api/tenrouter/sync', { method: 'POST', timeoutMs: 300_000 }); toast(r.summary, !r.results.some((x) => x.status === 'failed')); }
   catch (e) { toast(e.message, false); }
   tr.syncing = false;
   await loadTrConfig(); loadLogs();
@@ -3360,9 +3359,10 @@ async function loadQuotas(ids, opts) {
   const worker = async () => {
     while (queue.length && run === quotaRun) {
       const id = queue.shift();
-      try { state.quotas[id] = (await api('/api/accounts/' + encodeURIComponent(id) + '/quota' + (live ? '?live=1' : ''))).quota; }
-      catch (e) { state.quotas[id] = { error: e.message }; }
-      render();
+      const runAtFetch = run;   // fetch 期间可能有新一轮 loadQuotas 进来（如卡片点「刷新」走 live）
+      try { if (runAtFetch === quotaRun) state.quotas[id] = (await api('/api/accounts/' + encodeURIComponent(id) + '/quota' + (live ? '?live=1' : ''))).quota; }
+      catch (e) { if (runAtFetch === quotaRun) state.quotas[id] = { error: e.message }; }
+      if (runAtFetch === quotaRun) render();
     }
   };
   await Promise.all([worker(), worker(), worker()]);
@@ -3455,7 +3455,7 @@ async function checkinAll(btn, product) {
   const label = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = I.refresh + T('领取中…');
   try {
-    const d = await api('/api/checkin', { json: { skipIfCheckedToday: false, product } });
+    const d = await api('/api/checkin', { json: { skipIfCheckedToday: false, product }, timeoutMs: 600_000 });
     toast(d.summary);
   } catch (e) { toast(e.message, false); }
   btn.disabled = false; btn.innerHTML = label;
@@ -3466,7 +3466,7 @@ async function claimWbActivities(btn) {
   const label = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = I.refresh + T('领取中…');
   try {
-    const d = await api('/api/workbuddy/claim-activities', { method: 'POST', json: {} });
+    const d = await api('/api/workbuddy/claim-activities', { method: 'POST', json: {}, timeoutMs: 300_000 });
     const s = d.summary || {};
     const claimed = (d.results || []).flatMap((r) => r.claimed || []).filter((x) => x.status === 'checked-in');
     const amount = claimed.reduce((sum, x) => sum + (Number(x.claimedAmount) || 0), 0);
@@ -4204,10 +4204,12 @@ async function deviceLogin() {
     pollDevice(flow.sessionId, 0, ++devGen);
   } catch (e) { toast(T('发起授权失败：') + e.message, false); }
 }
+let pollFails = 0;   // 连续轮询失败计数（成功清零；连续 5 次才终止登录流程）
 async function pollDevice(sessionId, n, gen) {
   if (gen !== devGen) return;
   try {
     const r = await api('/api/auth/device/poll', { json: { sessionId } });
+    pollFails = 0;
     if (gen !== devGen) return;
     if (r.status === 'pending') {
       if (n > 450) return deviceStop(T('授权超时，请重试'));
@@ -4228,10 +4230,19 @@ async function pollDevice(sessionId, n, gen) {
     } else {
       deviceStop(T('授权失败：') + (r.error || r.status));
     }
-  } catch (e) { if (gen === devGen) deviceStop(T('轮询异常：') + e.message); }
+  } catch (e) {
+    // 单次轮询失败（daemon 忙时瞬时 502/超时）不该终止整个登录：服务端会话仍然有效，
+    // 下一个 2s tick 就可能成功。连续多次失败才放弃（上限 5 次 ≈ 10s+超时重试）。
+    if (gen !== devGen) return;
+    pollFails++;
+    if (pollFails >= 5) { pollFails = 0; return deviceStop(T('轮询异常：') + e.message); }
+    $('dev-status').textContent = T('轮询异常，正在重试…（') + pollFails + '/5）';
+    devTimer = setTimeout(() => pollDevice(sessionId, n + 1, gen), 2000);
+  }
 }
 function deviceStop(msg) {
   devGen++;
+  pollFails = 0;
   if (devTimer) { clearTimeout(devTimer); devTimer = null; }
   $('dev-cancel').style.display = 'none';
   if (msg) $('dev-status').textContent = msg;
@@ -4455,6 +4466,22 @@ bindCardDrag($('tr-panel'), {
     } else return;
     saveTrOrder();
     renderTenrouter();
+  },
+});
+// 免费额度页站点卡拖拽：与其他两处一样只在启动时绑一次。此前在 renderFreePool 里绑定，
+// 而 render() 每次刷新都调它——监听器按渲染次数无限累积，一次 drop 触发 N 次重排
+bindCardDrag($('free-pool-body'), {
+  kind: 'free-site',
+  onReorder: (drag, targetId) => {
+    if (!drag.id) return;
+    const ids = state.freeOrder.slice();
+    const from = ids.indexOf(drag.id);
+    if (from >= 0) ids.splice(from, 1);
+    const ti = ids.indexOf(targetId);
+    ids.splice(ti < 0 ? ids.length : ti, 0, drag.id);
+    state.freeOrder = ids;
+    saveFreeOrder();
+    renderFreePool();
   },
 });
 
@@ -4857,15 +4884,33 @@ function hideBootBusy() { const b = $('boot-busy'); if (!b) return; clearTimeout
     loadMGateway();
     loadTGateway();
     loadTrConfig().then(() => loadTrQuotas());
-    setInterval(() => loadTrQuotas(), 5 * 60 * 1000);
+    let trBusy = false;
+    setInterval(async () => {
+      if (trBusy || document.hidden) return;
+      trBusy = true;
+      try { await loadTrQuotas(); } finally { trBusy = false; }
+    }, 5 * 60 * 1000);
     // 账号余额（ZCode 剩余 token 等）自动刷新：可见时每 2 分钟一轮；从托盘/后台切回时若超过 1 分钟没刷过立即补一轮
     setInterval(() => { if (!document.hidden) loadQuotas(); }, 2 * 60 * 1000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && Date.now() - quotaLoadedAt > 60 * 1000) loadQuotas();
     });
     loadLogs();
-    setInterval(loadLogs, 10000);
-    setInterval(async () => { await loadStatus(); await loadZNet(); await loadZGateway(); await loadMGateway(); await loadTGateway(); await refreshAccountList(); render(); }, 30000);
+    // 轮询单飞：上一轮没结束就跳过本轮。没有这个守卫 + api() 挂钟超时，daemon 卡住
+    // 时每 10s/30s 的轮询会无限堆积，恢复后一次性齐发还互相踩状态
+    let logsBusy = false;
+    setInterval(async () => {
+      if (logsBusy || document.hidden) return;
+      logsBusy = true;
+      try { await loadLogs(); } finally { logsBusy = false; }
+    }, 10000);
+    let statusBusy = false;
+    setInterval(async () => {
+      if (statusBusy || document.hidden) return;
+      statusBusy = true;
+      try { await loadStatus(); await loadZNet(); await loadZGateway(); await loadMGateway(); await loadTGateway(); await refreshAccountList(); render(); }
+      finally { statusBusy = false; }
+    }, 30000);
     });
   }
   // 先直接请求（本机模式无需密码）；需要密码时 api() 会弹框并重试

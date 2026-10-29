@@ -52,6 +52,23 @@ function panelUrl(host, port) {
   return `http://${h}:${port}`;
 }
 
+/**
+ * 改账号/状态的命令（add / import / checkin / remove / scan）在 daemon 活着时必须拒绝：
+ * withAccounts 的串行队列只在单进程内有效，CLI 进程基于旧快照整份写回，会把 daemon
+ * 刚轮换掉的 refreshToken / 刚写的签到水位冲掉（凭据链当场作废——refreshGuard 事故同款）。
+ */
+async function assertDaemonNotRunning() {
+  const { statusRuntime } = await import('../src/bgdaemon.js');
+  let s;
+  try { s = await statusRuntime(); } catch { return; }   // 状态探测不了就不拦（保持旧行为）
+  if (s.running) {
+    console.error(`✗ 检测到后台 daemon 正在运行（pid ${s.pid}，端口 ${s.port}）。`);
+    console.error('  两个进程同时写 accounts.json / state.json 会互相覆盖（凭据/签到记录丢失）。');
+    console.error('  请改用面板里的对应操作，或先 creditdaddy stop 再执行本命令。');
+    process.exit(1);
+  }
+}
+
 /** 把运行时长说成人话（status 用） */
 function humanUptime(ms) {
   if (!Number.isFinite(ms) || ms < 0) return '未知';
@@ -181,6 +198,7 @@ async function main() {
       break;
     }
     case 'add': {
+      await assertDaemonNotRunning();
       const token = args[1];
       if (!token) { console.error('用法: creditdaddy add <token> [--cn] [--name 名字]'); process.exit(1); }
       const { publicAccount } = await import('../src/store.js');
@@ -206,6 +224,7 @@ async function main() {
       break;
     }
     case 'checkin': {
+      await assertDaemonNotRunning();
       const { runCheckinTick } = await import('../src/checkin.js');
       const provider = args.includes('--workbuddy')
         ? (args.includes('--intl') ? 'workbuddy-intl' : 'workbuddy')
@@ -218,6 +237,7 @@ async function main() {
       break;
     }
     case 'remove': {
+      await assertDaemonNotRunning();
       const id = args[1];
       if (!id) { console.error('用法: creditdaddy remove <id前缀>（id 见 creditdaddy list）'); process.exit(1); }
       const { withAccounts } = await import('../src/store.js');
@@ -259,6 +279,7 @@ async function main() {
       break;
     }
     case 'import': {
+      await assertDaemonNotRunning();
       const file = args[1];
       if (!file) { console.error('用法: creditdaddy import <file.json>'); process.exit(1); }
       const { readFileSync } = await import('node:fs');
@@ -283,6 +304,7 @@ async function main() {
       break;
     }
     case 'scan': {
+      await assertDaemonNotRunning();
       const { readQoderAppAccounts } = await import('../src/qoderApp.js');
       const { readWorkbuddySessions } = await import('../src/workbuddyLocal.js');
       const { liveToAccount: zcodeLive } = await import('../src/zcodeLocal.js');

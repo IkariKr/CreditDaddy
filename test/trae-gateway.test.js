@@ -89,24 +89,27 @@ function fakeReq(method, body, remoteAddress = '127.0.0.1') {
 }
 
 function fakeRes() {
-  const res = {
-    statusCode: 200,
-    headers: {},
-    chunks: [],
-    ended: false,
-    writeHead(code, h = {}) {
-      res.statusCode = code;
-      Object.assign(res.headers, h);
-    },
-    write(chunk) {
-      res.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
-      return true;
-    },
-    end(chunk) {
-      if (chunk) res.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
-      res.ended = true;
-      res.body = Buffer.concat(res.chunks).toString('utf8');
-    },
+  // 真实 ServerResponse 是 EventEmitter（网关会挂 res 'close' 监听观察客户端断开）
+  const res = new EventEmitter();
+  res.statusCode = 200;
+  res.headers = {};
+  res.chunks = [];
+  res.ended = false;
+  res.writableEnded = false;
+  res.writeHead = (code, h = {}) => {
+    res.statusCode = code;
+    Object.assign(res.headers, h);
+  };
+  res.write = (chunk) => {
+    res.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    return true;
+  };
+  res.end = (chunk) => {
+    if (chunk) res.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    res.ended = true;
+    res.writableEnded = true;
+    res.body = Buffer.concat(res.chunks).toString('utf8');
+    res.emit('close');   // 与真实响应一致：收尾后触发 close
   };
   return res;
 }

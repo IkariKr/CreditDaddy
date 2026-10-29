@@ -518,6 +518,7 @@ function isLoopbackSocketAddr(remote) {
 const keyFails = new Map();  // socketRemote → { n, lockedUntil }
 const KEY_FAIL_LIMIT = 10;
 const KEY_FAIL_LOCK_MS = 5 * 60_000;
+const KEY_FAIL_SWEEP_MS = 10 * 60_000;
 
 function remoteKeyAddr(req) { return String((req.socket && req.socket.remoteAddress) || ''); }
 function keyThrottled(remote) {
@@ -528,8 +529,15 @@ function keyThrottled(remote) {
   return false;
 }
 function noteKeyMiss(remote) {
+  // 顺手清扫：无锁且 10 分钟没再失败的来源直接清掉——0.0.0.0 部署时全网段扫描器
+  // 每个来源都会留一条记录，进程不重启就永不回收
+  const now = Date.now();
+  for (const [k, v] of keyFails) {
+    if (!v.lockedUntil && now - (v.at || 0) > KEY_FAIL_SWEEP_MS) keyFails.delete(k);
+  }
   const rec = keyFails.get(remote) || { n: 0 };
   rec.n += 1;
+  rec.at = now;
   if (rec.n >= KEY_FAIL_LIMIT) { rec.lockedUntil = Date.now() + KEY_FAIL_LOCK_MS; rec.n = 0;
     logger.warn('DAEMON', '面板密码连续 {n} 次错误,来源 {remote} 已限流 5 分钟', { n: KEY_FAIL_LIMIT, remote }); }
   keyFails.set(remote, rec);
@@ -608,6 +616,11 @@ async function handleApi(req, res, url) {
       return i < 0 ? null : accounts.splice(i, 1)[0];
     });
     if (!removed) return json(res, 404, { error: '账号不存在' });
+    // 网关侧的轮换/冷却/粘滞状态同步清掉：账号 id 每次导入都是新 UUID，残留条目永远无人触碰
+    try { zcodeGateway.forgetAccount(removed.id); } catch {}
+    try { traeGateway.forgetAccount(removed.id); } catch {}
+    try { minimaxGateway.forgetAccount(removed.id); } catch {}
+    try { (await import('./zcodeAutoClaim.js')).forgetAccount(removed.id); } catch {}
     logger.info('DAEMON', '删除账号 {name}', { name: removed.name || removed.id });
     return json(res, 200, { ok: true });
   }
@@ -1096,12 +1109,18 @@ async function handleApi(req, res, url) {
       return hits.length;
     });
     if (!bound) {
-      // 登录窗口可能先于设备码入库关闭：暂存待绑定会话，addAccount 补全 uid 后自动挂上
+      // 登录窗口可能先于设备码入库关闭：暂存待绑定会话，addAccount 补全 uid 后自动挂上。
+      // 暂存区顺手做 TTL 清理（48h）：没等到绑定的 uid 会话一直滞留 settings.json——
+      // 既是无限增长的存档，也是过期凭据长期躺在盘上
+      const TTL_MS = 48 * 3600 * 1000;
       await withSettings((settings) => {
-        settings.pendingQoderWebSessions = {
-          ...(settings.pendingQoderWebSessions || {}),
-          [probe.user_id]: { kind, cookie, capturedAt: now },
-        };
+        const pending = { ...(settings.pendingQoderWebSessions || {}) };
+        for (const [uid, it] of Object.entries(pending)) {
+          const at = Date.parse(it?.capturedAt || '');
+          if (!Number.isFinite(at) || Date.now() - at > TTL_MS) delete pending[uid];
+        }
+        pending[probe.user_id] = { kind, cookie, capturedAt: now };
+        settings.pendingQoderWebSessions = pending;
       });
       logger.info('DAEMON', '收到 Qoder 网页会话(uid {uid}...),暂无匹配账号,已暂存待绑定', { uid: probe.user_id.slice(0, 8) });
     } else {
@@ -1783,20 +1802,22 @@ async function handleApi(req, res, url) {
       setLocale(locale);
       await saveSettings({ locale });
     }
-    // 全局自动签到 开关 / 频率（面板「设置 → 通用」）
-    if (typeof body?.autoCheckin === 'boolean') await saveSettings({ autoCheckin: body.autoCheckin });
+    // 全局自动签到 开关 / 频率（面板「设置 → 通用」）。不在这里提前 return：
+    // 一个请求同时带 autoCheckin 和 panelKey 时，提前返回会让密码分支被静默跳过，
+    // 面板以为改密成功、下次解锁却被旧密码挡住
+    let resyncedCheckin = false;
+    if (typeof body?.autoCheckin === 'boolean') { await saveSettings({ autoCheckin: body.autoCheckin }); resyncedCheckin = true; }
     if (body?.checkinIntervalMin !== undefined) {
       const min = Math.max(15, Math.min(1440, Number(body.checkinIntervalMin) || 120));
       await saveSettings({ checkinIntervalMin: min });
+      resyncedCheckin = true;
     }
-    if (body?.autoCheckin !== undefined || body?.checkinIntervalMin !== undefined) {
-      await resyncAutoCheckinScheduler();
-      return json(res, 200, { ok: true });
-    }
+    if (resyncedCheckin) await resyncAutoCheckinScheduler();
     // 只有携带密码字段才走密码分支：纯语言/其它设置的请求此前会掉进
     // 「请提供新密码」400，面板 api() 抛错导致语言切换点了不刷新（i18n 切换失效根因）
     if (body?.panelKey !== undefined || body?.disable === true) return await handleSettingsPut(res, body);
     if (body?.locale !== undefined) return json(res, 200, { ok: true, panelKeyEnabled: panelKeyRequired(), locale: getLocale() });
+    if (resyncedCheckin) return json(res, 200, { ok: true });
     return json(res, 400, { error: '请求未携带任何设置字段' });
   }
 
