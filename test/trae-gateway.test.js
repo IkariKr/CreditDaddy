@@ -275,3 +275,27 @@ test('事件流阶段 429 同样进阶梯（会话建好、拉流被限流）', 
   assert.equal(d.remainSeconds, 30, '首次事件流 429 冷却 30 秒');
   assert.equal(d.streak, 1);
 });
+
+test('权重查询黑洞时补全不被拖死（2s 封顶，旧快照先顶上，刷新转后台）', async () => {
+  await resetState();
+  await seedAccount('t1');
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    // 额度查询永远挂着（模拟上游黑洞）——旧实现在权重过期后的首个请求里完整等待它（15s/POST × 串行）
+    if (u.includes('/ide_user_ent_usage') || u.includes('/ide_user_pay_status')) return new Promise(() => {});
+    return realFetch(url, init);
+  };
+  try {
+    upstreamQueue.push({ status: 200, body: JSON.stringify({ code: 0, data: { chat_session_id: 'cs_x', message_id: 'msg_x' } }) });
+    upstreamQueue.push({ status: 200, sse: true, body: 'data: {"thought": "ok"}\n\n' });
+    const t0 = Date.now();
+    const req = fakeReq('POST', JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }));
+    const res = fakeRes();
+    await gw.handleGateway(req, res);
+    assert.equal(res.statusCode, 200, res.body);
+    assert.ok(Date.now() - t0 < 5000, `额度黑洞不得拖死补全（实测 ${Date.now() - t0}ms）`);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

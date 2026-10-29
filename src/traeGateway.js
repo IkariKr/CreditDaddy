@@ -68,6 +68,8 @@ const coolingStreak = new Map();
 const dead = new Map();     // accountId → 拉黑时的凭据指纹（指纹变化 = 已重新授权/导入，自动复活）
 const weights = new Map();  // accountId → { w: 剩余积分权重, at: 查询时刻 }
 const WEIGHT_TTL_MS = 10 * 60_000;  // 超过 10 分钟重查额度，让积分变化反映到分流上
+const WEIGHT_REFRESH_CAP_MS = 2_000;   // 请求路径等新权重的上限；超时先用旧快照，刷新转后台
+const weightInflight = new Map();      // accountId → 刷新中 Promise（并发请求共用一次查询）
 
 export const stats = {
   lastCallAt: null,
@@ -122,6 +124,7 @@ export function __resetForTests() {
   coolingStreak.clear();
   dead.clear();
   weights.clear();
+  weightInflight.clear();
   swrr.clear();
   stats.lastCallAt = null;
   stats.calls = 0;
@@ -131,15 +134,40 @@ export function __resetForTests() {
 async function accountWeight(a) {
   const hit = weights.get(a.id);
   if (hit && Date.now() - hit.at < WEIGHT_TTL_MS) return hit.w;
-  let w = hit?.w ?? MIN_WEIGHT;
+  const fallback = hit?.w ?? MIN_WEIGHT;
+  // 请求路径只等一个很短的上限：额度接口健康时（通常亚秒）照常拿到新权重精准分流；
+  // 上游黑洞时最多等这么久就先用旧快照——刷新仍在后台继续，下一个请求就有新值。
+  // 此前是完整等待额度查询（两个 POST，各 15s 上限）且逐号串行，一个黑洞的上游
+  // 能让权重过期后的第一个补全请求卡 1-2 分钟
+  const refresh = weightRefresh(a);
+  let timer;
+  const capped = new Promise((r) => { timer = setTimeout(() => r(fallback), WEIGHT_REFRESH_CAP_MS); });
   try {
-    const q = await fetchTraeQuota(a);
-    w = Math.max(MIN_WEIGHT, Number(q?.remaining) || 0);
-  } catch {
-    // 额度查询失败保留上次快照权重（网络抖动不该把主力踢成保底权重）
+    return await Promise.race([refresh, capped]);
+  } finally {
+    clearTimeout(timer);
   }
-  weights.set(a.id, { w, at: Date.now() });
-  return w;
+}
+
+/** 去重后的权重刷新：并发请求共用同一次额度查询；查询失败保留旧快照权重（时间戳仍刷新，避免每请求都撞同一坏接口） */
+function weightRefresh(a) {
+  const existing = weightInflight.get(a.id);
+  if (existing) return existing;
+  const run = (async () => {
+    const hit = weights.get(a.id);
+    let w = hit?.w ?? MIN_WEIGHT;
+    try {
+      const q = await fetchTraeQuota(a);
+      w = Math.max(MIN_WEIGHT, Number(q?.remaining) || 0);
+    } catch {
+      // 额度查询失败保留上次快照权重（网络抖动不该把主力踢成保底权重）
+    }
+    weights.set(a.id, { w, at: Date.now() });
+    return w;
+  })();
+  weightInflight.set(a.id, run);
+  run.finally(() => { if (weightInflight.get(a.id) === run) weightInflight.delete(a.id); }).catch(() => {});
+  return run;
 }
 
 const swrr = new Map();
@@ -148,16 +176,20 @@ function ensureSwrr(id) { if (!swrr.has(id)) swrr.set(id, 0); }
 async function rotationQueue() {
   const all = (await loadAccounts()).filter((a) => a.provider === 'trae');
   const now = Date.now();
-  const ready = [];
+  const candidates = [];
   for (const a of all) {
     if (isDead(a)) continue;
     if ((cooling.get(a.id) || 0) > now) continue;
     if (!a.token) continue;
     ensureSwrr(a.id);
-    const w = await accountWeight(a);
-    swrr.set(a.id, (swrr.get(a.id) || 0) + w);
-    ready.push({ account: a, weight: w });
+    candidates.push(a);
   }
+  // 权重并行取（各自 2s 封顶），不再逐号串行等——N 个账号的最坏停顿从 N×上限变成 1 个上限
+  const ws = await Promise.all(candidates.map((a) => accountWeight(a)));
+  const ready = candidates.map((a, i) => {
+    swrr.set(a.id, (swrr.get(a.id) || 0) + ws[i]);
+    return { account: a, weight: ws[i] };
+  });
   if (!ready.length) return [];
 
   let pick = ready[0];

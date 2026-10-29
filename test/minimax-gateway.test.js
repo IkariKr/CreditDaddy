@@ -350,3 +350,31 @@ test('连续 429 → 退避阶梯递增（30s → 1min → 2min → 5min → 10m
   assert.equal(after.remainSeconds, 30, '成功清零后，再次 429 回到 30 秒');
   assert.equal(after.streak, 1);
 });
+
+test('权重查询黑洞时补全不被拖死（2s 封顶）+ 并发共用同一次刷新', async () => {
+  await resetState();
+  await seedAccount('a1', { name: '一号', token: 'tok-a1' });
+  await seedAccount('a2', { name: '二号', token: 'tok-a2' });
+  const realFetch = globalThis.fetch;
+  let quotaCalls = 0;
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes('/commerce/get_membership_info')) { quotaCalls++; return new Promise(() => {}); }
+    return realFetch(url, init);
+  };
+  try {
+    const fire = async () => {
+      upstreamQueue.push(msgOk());
+      const res = captureRes();
+      await gw.handleGateway(fakeReq('POST', '{}'), res);
+      assert.equal(res.status, 200, res.body);
+    };
+    const t0 = Date.now();
+    await fire();
+    assert.ok(Date.now() - t0 < 5000, `额度黑洞不得拖死补全（实测 ${Date.now() - t0}ms）`);
+    await fire();
+    assert.equal(quotaCalls, 2, '两个账号各一次刷新；挂起中的刷新被复用，不随请求翻倍');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

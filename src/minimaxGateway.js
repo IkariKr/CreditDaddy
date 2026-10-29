@@ -54,6 +54,8 @@ const coolingStreak = new Map();
 const dead = new Map();     // accountId → 拉黑时的凭据指纹（指纹变化 = 已重新授权/刷新，自动复活）
 const weights = new Map();  // accountId → { w: 剩余积分权重, at: 查询时刻 }(查询失败时保留旧快照)
 const WEIGHT_TTL_MS = 10 * 60_000;  // 权重超过该时长重新查询额度,让用量变化能反映到分流上
+const WEIGHT_REFRESH_CAP_MS = 2_000;   // 请求路径等新权重的上限；超时先用旧快照，刷新转后台
+const weightInflight = new Map();      // accountId → 刷新中 Promise（并发请求共用一次查询）
 
 export const stats = {
   lastCallAt: null,
@@ -130,6 +132,7 @@ export function __resetForTests() {
   coolingStreak.clear();
   dead.clear();
   weights.clear();
+  weightInflight.clear();
   stickyId = null;
   stats.lastCallAt = null;
   stats.calls = 0;
@@ -141,15 +144,40 @@ export function __resetForTests() {
 async function accountWeight(a) {
   const hit = weights.get(a.id);
   if (hit && Date.now() - hit.at < WEIGHT_TTL_MS) return hit.w;
-  let w = hit?.w ?? MIN_WEIGHT;
+  const fallback = hit?.w ?? MIN_WEIGHT;
+  // 请求路径只等一个很短的上限：额度接口健康时照常拿到新权重精准选主力；
+  // 上游黑洞时最多等这么久就先用旧快照——刷新仍在后台继续，下一个请求就有新值。
+  // 此前是完整等待额度查询且逐号串行，一个黑洞的上游能让权重过期后的
+  // 第一个补全请求卡 1-2 分钟（客户端还挂着已连接的 SSE 请求）
+  const refresh = weightRefresh(a);
+  let timer;
+  const capped = new Promise((r) => { timer = setTimeout(() => r(fallback), WEIGHT_REFRESH_CAP_MS); });
   try {
-    const q = await fetchMiniMaxQuota(a, refreshContext(a, (m) => logger.info("MINIMAX-GW", t('{label} {msg}', { label: a.name || a.uid || a.id, msg: m }))));
-    w = Math.max(MIN_WEIGHT, Number(q?.remaining) || 0);
-  } catch {
-    // 额度查询失败时保留上次快照权重：一次网络抖动不该把主力账号踢成保底权重、引发主力来回切换
+    return await Promise.race([refresh, capped]);
+  } finally {
+    clearTimeout(timer);
   }
-  weights.set(a.id, { w, at: Date.now() });
-  return w;
+}
+
+/** 去重后的权重刷新：并发请求共用同一次额度查询；查询失败保留旧快照权重（时间戳仍刷新，避免每请求都撞同一坏接口） */
+function weightRefresh(a) {
+  const existing = weightInflight.get(a.id);
+  if (existing) return existing;
+  const run = (async () => {
+    const hit = weights.get(a.id);
+    let w = hit?.w ?? MIN_WEIGHT;
+    try {
+      const q = await fetchMiniMaxQuota(a, refreshContext(a, (m) => logger.info("MINIMAX-GW", t('{label} {msg}', { label: a.name || a.uid || a.id, msg: m }))));
+      w = Math.max(MIN_WEIGHT, Number(q?.remaining) || 0);
+    } catch {
+      // 额度查询失败时保留上次快照权重：一次网络抖动不该把主力账号踢成保底权重、引发主力来回切换
+    }
+    weights.set(a.id, { w, at: Date.now() });
+    return w;
+  })();
+  weightInflight.set(a.id, run);
+  run.finally(() => { if (weightInflight.get(a.id) === run) weightInflight.delete(a.id); }).catch(() => {});
+  return run;
 }
 
 // ── 粘性主力选型 ──
@@ -167,13 +195,16 @@ const STICKY_MARGIN_ABS = 50;    // 且绝对差超过 50 积分
 async function rotationQueue() {
   const all = (await loadAccounts()).filter((a) => a.provider === 'minimax');
   const now = Date.now();
-  const ready = [];
+  const candidates = [];
   for (const a of all) {
     if (isDead(a)) continue;
     if ((cooling.get(a.id) || 0) > now) continue;
     if (!a.token) continue;
-    ready.push({ account: a, weight: await accountWeight(a) });
+    candidates.push(a);
   }
+  // 权重并行取（各自 2s 封顶），不再逐号串行等
+  const ws = await Promise.all(candidates.map((a) => accountWeight(a)));
+  const ready = candidates.map((a, i) => ({ account: a, weight: ws[i] }));
   if (!ready.length) return [];
 
   ready.sort((x, y) => y.weight - x.weight);
