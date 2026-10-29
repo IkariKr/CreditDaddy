@@ -2730,6 +2730,12 @@ function renderFreePool() {
           return '<span class="pill ok" style="font-weight:600">' + T('Token 余额 ') + Number(bal).toLocaleString() + '</span>' + detail;
         }
       }
+      if (site.id === 'codearts') {
+        const bal = acc.quota?.total;
+        if (Number.isFinite(bal)) {
+          return '<span class="pill ok" style="font-weight:600">' + T('积分余额 ') + Number(bal).toLocaleString() + '</span>';
+        }
+      }
       if (site.id === 'tokenharbor') {
         const used = acc.quota?.used;
         if (Number.isFinite(used)) {

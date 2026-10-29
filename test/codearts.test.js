@@ -85,8 +85,17 @@ test('checkinCodearts：delivery→claim 两步（可领=成功、已领=already
   const ok = await ca.checkinCodearts(cookie, { fetchImpl });
   assert.equal(ok.status, 'checked-in');
   assert.ok(calls.some((c) => c.url.includes('/ops/claim')));
-  assert.ok(calls.some((c) => String(c.body).includes('"campaignId":34')), 'claim 必须带 campaignId');
-  assert.ok(calls.some((c) => c.url.includes('/ops/events/trigger')), 'claim 前先事件资格上报');
+  const claimCall = calls.find((c) => String(c.body || '').includes('"campaignId":34'));
+  assert.ok(claimCall, 'claim 必须带 campaignId');
+  const claimBody = JSON.parse(claimCall.body);
+  assert.equal(claimBody.channel, 'PORTAL', 'claim 必须带 channel=PORTAL');
+  assert.ok(/^[0-9a-f]{32}$/.test(claimBody.idempotentKey), 'claim 必须带 32hex idempotentKey（缺它 400 参数无效）');
+  const trig = calls.find((c) => c.url.includes('/ops/events/trigger'));
+  assert.ok(trig, 'claim 前先事件资格上报');
+  const trigBody = JSON.parse(trig.body);
+  assert.equal(trigBody.triggerEvent, 'user.login');
+  assert.match(trigBody.idempotentKey, /^login-\d{8}-/, 'trigger 幂等键按日形状（与前端 m8c 同款）');
+  assert.equal(trigBody.channel, 'PORTAL');
 
   // 已领（CLAIMED）→ already，不打 claim
   calls.length = 0;

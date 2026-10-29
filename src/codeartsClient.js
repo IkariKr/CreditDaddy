@@ -120,13 +120,61 @@ export async function fetchCodeartsCampaigns(cookie, { fetchImpl } = {}) {
 }
 
 /**
- * 每日签到（活动福利 → 每日领取），两步：delivery 挑出「每日签到」可领活动 → POST claim。
- * 事件中心协议（实测）：先 POST events/trigger {eventCode}（页面 engages 后 claim 才认定资格），
- * claim body {campaignId}；响应 {code:0, message:'ok'} 形状，业务拒绝带非 0 code 与 error_msg。
- * 「已领过」按 delivery.status 预判（CLAIMED / CONFIRMED / CONSUMED / 非 ELIGIBLE）→ already，
- * 不打 claim 空枪（claim 对已领 campaignId 的真实响应未实测）。
+ * 身份（多账号归户用）：GET /portal/rest/me → { userId, userName, domainId, domainName }。
+ * 会话失效时网关回登录页 HTML（非 JSON）→ authExpired。
+ * @returns {Promise<{ok: boolean, authExpired?: boolean, identity?: {userId, userName, domainId, domainName}, error?: string}>}
+ */
+export async function fetchCodeartsIdentity(cookie, { fetchImpl } = {}) {
+  const doReq = doFetch(fetchImpl, codeartsHeaders(cookie, { json: true }));
+  const url = `${CODEARTS_PORTAL_BASE}/portal/rest/me?_=${Date.now()}`;
+  try {
+    const res = await doReq(url, { method: 'GET' });
+    if (res.status === 401 || res.status === 403) return { ok: false, authExpired: true, error: `会话失效（HTTP ${res.status}）` };
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    if (!looksJson(res)) return { ok: false, authExpired: true, error: '会话失效（网关返回登录页）' };
+    const body = await res.json().catch(() => null);
+    if (!body?.userId) return { ok: false, error: 'rest/me 无 userId（响应结构变化）', raw: body };
+    return {
+      ok: true,
+      identity: {
+        userId: String(body.userId),
+        userName: body.userName || body.name || null,
+        domainId: body.domainId || null,
+        domainName: body.domainName || null,
+      },
+      raw: body,
+    };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
+/**
+ * 每日签到（活动福利 → 每日领取）。
+ * 协议从 portal 前端 bundle（CodeArtsAgentPortal/126.10.101 index-0d2cb53c.js）逆向 + 页面实测：
+ *   1) POST events/trigger { triggerEvent: 'user.login', idempotentKey: `login-YYYYMMDD-<rand6>`, channel: 'PORTAL' }
+ *      （页面侧静默上报，错误被吞；资格认定可能依赖它，失败不阻断后续但记日志）
+ *   2) POST claim { campaignId, channel: 'PORTAL', idempotentKey: <32hex 随机> }
+ *      成功 = { code: 0, data: { status: 'CLAIMED' } }；业务拒绝 = 非 0 code + error_msg
+ *      （缺 idempotentKey 时 400「campaignId : 参数无效」——2026-10-30 实测踩过）
+ * 已领预判：delivery 的 status/claimable **有时延**（页面领取后仍短暂 ELIGIBLE），
+ * 不能只信它——claim 拒绝时复查一次 delivery，status 转 CLAIMED 即按 already 收口。
  * @returns {Promise<{ status: 'checked-in'|'already'|'no-activity'|'failed', message?: string, raw?: object }>}
  */
+function randomHex32() {
+  // 与前端 Zco() 同形状：16 字节随机数的 hex（无 crypto.subtle 依赖，签到幂等键够用）
+  let s = '';
+  for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
+  return s;
+}
+
+function loginIdempotentKey(now = new Date()) {
+  const p = (a) => String(a).padStart(2, '0');
+  const day = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`;
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `login-${day}-${rand}`;
+}
+
 export async function checkinCodearts(cookie, { fetchImpl } = {}) {
   const doReq = doFetch(fetchImpl, codeartsHeaders(cookie, { json: true }));
   const list = await fetchCodeartsCampaigns(cookie, { fetchImpl }).catch((e) => ({ ok: false, error: e?.message || String(e) }));
@@ -135,25 +183,43 @@ export async function checkinCodearts(cookie, { fetchImpl } = {}) {
   const daily = list.items.find((it) => it.type === 'USER_LOGIN' && it.triggerMode === 'MANUAL_CLAIM')
     || list.items.find((it) => /每日签到/.test(String(it.title || '')));
   if (!daily) return { status: 'no-activity', message: '活动列表里没有每日签到活动（活动可能已结束）', raw: list.raw };
-  if (daily.claimable === false || /CLAIMED|CONFIRMED|CONSUMED/.test(String(daily.status || ''))) {
+  if (daily.claimable === false && /CLAIMED|CONFIRMED|CONSUMED/.test(String(daily.status || ''))) {
     return { status: 'already', message: '今日已领', raw: daily };
   }
-  // 事件资格上报（页面 ClaimAction 的前置；失败不阻断 claim——服务端可能不强制）
+  // 事件资格上报（页面形状：triggerEvent + 按日 idempotentKey + channel；失败不阻断）
   await doReq(`${CODEARTS_PORTAL_BASE}/portal/promptcenter/v1/ops/events/trigger`, {
     method: 'POST',
-    body: JSON.stringify({ eventCode: daily.extra?.triggerEvent || 'user.login' }),
+    body: JSON.stringify({ triggerEvent: daily.extra?.triggerEvent || 'user.login', idempotentKey: loginIdempotentKey(), channel: 'PORTAL' }),
   }).catch(() => {});
   const res = await doReq(`${CODEARTS_PORTAL_BASE}/portal/promptcenter/v1/ops/claim`, {
     method: 'POST',
-    body: JSON.stringify({ campaignId: daily.campaignId }),
+    body: JSON.stringify({ campaignId: daily.campaignId, channel: 'PORTAL', idempotentKey: randomHex32() }),
   });
   if (res.status === 401 || res.status === 403) return { status: 'failed', message: `会话失效（HTTP ${res.status}）`, authExpired: true };
-  if (!res.ok) return { status: 'failed', message: `HTTP ${res.status}` };
+  if (!res.ok) {
+    // delivery 状态有时延：claim 被拒时复查一次，转 CLAIMED 则实际已入账（按 already 收口）
+    await new Promise((r) => setTimeout(r, 1500));
+    const again = await fetchCodeartsCampaigns(cookie, { fetchImpl }).catch(() => null);
+    const now = again?.ok ? again.items.find((it) => it.campaignId === daily.campaignId) : null;
+    if (now && /CLAIMED|CONFIRMED|CONSUMED/.test(String(now.status || ''))) {
+      return { status: 'already', message: '今日已领', raw: now };
+    }
+    return { status: 'failed', message: `HTTP ${res.status}`, raw: now || daily };
+  }
   if (!looksJson(res)) return { status: 'failed', message: '会话失效（网关返回登录页）', authExpired: true };
   const body = await res.json().catch(() => null);
   const code = Number(body?.code);
   if (Number.isFinite(code) && code !== 0) {
+    // 同上：拒绝可能只是 delivery 状态时延，复查后再定性
+    await new Promise((r) => setTimeout(r, 1500));
+    const again = await fetchCodeartsCampaigns(cookie, { fetchImpl }).catch(() => null);
+    const now = again?.ok ? again.items.find((it) => it.campaignId === daily.campaignId) : null;
+    if (now && /CLAIMED|CONFIRMED|CONSUMED/.test(String(now.status || ''))) {
+      return { status: 'already', message: '今日已领', raw: now };
+    }
     return { status: 'failed', message: body?.error_msg || body?.message || `claim code=${code}`, raw: body };
   }
-  return { status: 'checked-in', message: body?.message || `积分领取成功（+${daily.benefitAmount ?? 100}）`, raw: body };
+  const okStatus = /CLAIMED|CONFIRMED|CONSUMED/.test(String(body?.data?.status || '')) || !body?.data?.status;
+  if (!okStatus) return { status: 'failed', message: `claim 返回 status=${body?.data?.status}`, raw: body };
+  return { status: 'checked-in', message: `积分领取成功（+${daily.benefitAmount ?? 100}）`, raw: body };
 }
