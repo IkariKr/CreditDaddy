@@ -759,6 +759,7 @@
   "{name} 积分探测通过（{total} 分，即将到期 {expiring}，身份 {identity}）": "{name} points probe OK ({total} points, {expiring} expiring, identity {identity})",
   "{name} 积分抓取异常:{err}": "{name} points capture error: {err}",
   "积分余额 ": "Points balance ",
+  "⚠ 新注册华为云账号的用户可能会接到华为云推广电话，介意者请慎用新号开通。": "⚠ New Huawei Cloud accounts may receive marketing calls from Huawei — think twice before signing up with a new number.",
   "码道 CodeArts": "CodeArts (Huawei)",
   "登录码道控制台后自动捕获华为云会话；每日「活动福利 → 每日领取」积分（体验版 100/天，当日有效，活动期至 2026-12-31）由 CD 自动签到。凭据只存本机（账号库加密）。": "Captures your Huawei Cloud session after you sign in to the CodeArts console; the daily Benefits → Daily claim points (100/day on the free tier, same-day expiry, event runs until 2026-12-31) are auto-claimed by CD. Credentials never leave this machine (encrypted in the local account store).",
   "留空保持原密码": "Leave empty to keep the current password",

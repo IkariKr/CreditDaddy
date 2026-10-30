@@ -2675,6 +2675,9 @@ function renderFreePool() {
     const clearBtn = canCapture
       ? ' <button class="btn" data-clear-session="' + esc(site.id) + '" title="' + T('抹掉本机为该站点留存的登录会话（下次捕获需要重新登录）') + '">' + T('清除已存会话') + '</button>'
       : '';
+    // 站点级红字警示（site.warnHtml，站点配置声明、此处统一渲染）：
+    // 码道是新华为云账号开通的服务，新注册用户可能接到推广电话——醒目提示免得用户莫名
+    const warn = site.warnHtml ? '<div style="margin:2px 0 6px;font-size:12px;font-weight:600;color:var(--danger,#e5484d)">' + site.warnHtml + '</div>' : '';
     const hint = site.hint ? '<div class="hint" style="margin:2px 0 6px">' + esc(T(site.hint)) + '</div>' : '';
 
     const fmtBalanceText = (acc) => {
@@ -2809,6 +2812,7 @@ function renderCookieSites() {
     const btn = canCapture
       ? '<button class="btn" data-capture-site="' + esc(site.id) + '">' + T('网页版') + '</button>'
       : T('<button class="btn" disabled title="需要桌面版 CreditDaddy(无痕登录窗)">网页版</button>');
+    const warn = site.warnHtml ? '<div style="font-size:12px;font-weight:600;color:var(--danger,#e5484d)">' + site.warnHtml + '</div>' : '';
     const hint = site.hint ? T('<div class="hint">') + esc(site.hint) + '</div>' : '';
     const accRows = rows.map((acc) =>
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px">'
@@ -2817,7 +2821,7 @@ function renderCookieSites() {
     return '<div style="border:1px solid var(--border-subtle);border-radius:10px;padding:10px 12px;display:grid;gap:6px">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'
       + '<span><b>' + esc(site.label || site.name) + '</b> · ' + stateTxt + '</span>' + btn + '</div>'
-      + hint + accRows + '</div>';
+      + warn + hint + accRows + '</div>';
   }).join('');
 }
 /**
