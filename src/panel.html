@@ -2676,7 +2676,7 @@ function renderFreePool() {
       ? ' <button class="btn" data-clear-session="' + esc(site.id) + '" title="' + T('抹掉本机为该站点留存的登录会话（下次捕获需要重新登录）') + '">' + T('清除已存会话') + '</button>'
       : '';
     // 站点级红字警示（site.warnHtml，站点配置声明、此处统一渲染）：
-    // 码道是新华为云账号开通的服务，新注册用户可能接到推广电话——醒目提示免得用户莫名
+    // 用于「接入该站点有工具之外的代价」这类必须前置告知的情况（如注册新号可能被电话推广）
     const warn = site.warnHtml ? '<div style="margin:2px 0 6px;font-size:12px;font-weight:600;color:var(--danger,#e5484d)">' + site.warnHtml + '</div>' : '';
     const hint = site.hint ? '<div class="hint" style="margin:2px 0 6px">' + esc(T(site.hint)) + '</div>' : '';
 
@@ -2731,12 +2731,6 @@ function renderFreePool() {
             ? '<span class="dim" style="font-size:11px">' + T('（') + packs.length + T(' 个资源包）') + '</span>'
             : '';
           return '<span class="pill ok" style="font-weight:600">' + T('Token 余额 ') + Number(bal).toLocaleString() + '</span>' + detail;
-        }
-      }
-      if (site.id === 'codearts') {
-        const bal = acc.quota?.total;
-        if (Number.isFinite(bal)) {
-          return '<span class="pill ok" style="font-weight:600">' + T('积分余额 ') + Number(bal).toLocaleString() + '</span>';
         }
       }
       if (site.id === 'tokenharbor') {

@@ -170,34 +170,13 @@ export const COOKIE_SITES = [
     entryOnly: true,       // 只出「打开豆包」按钮，无会话捕获 / 无探测 / 无账号行
     hint: '在豆包客户端（或网页）登录后捕获会话，CD 只读展示体验额度与每日签到状态（+200/天）；签到请在「打开豆包」里手动完成——活动在客户端内，CD 不代签；仅个人账号可参与（飞书企业号被排除），凭据只存本机。'
   },
-  {
-    // 华为云码道 CodeArts 代码智能体（issue #40）：每日签到得积分（体验版 100/天，当日有效）。
-    // 活动期 2026-10-27 20:00 ～ 2026-12-31；控制台入口 console.huaweicloud.com/agentarts（华为云
-    // 统一登录，region 可变），签到动作在「活动福利 → 每日领取」。
-    // ⚠ 端点未定（抓包/真 cookie 考古中）：probe/identity/quota 先按华为云控制台通用形状占位，
-    // cookie 捕获先行（cookieUrls 覆盖 console + auth 两域），签到/余额实现挂 codeartsClient.js TODO。
-    id: 'codearts',
-    name: '码道 CodeArts',
-    provider: 'codearts',
-    label: '码道 CodeArts',
-    // 码道产品本体在 codearts.huaweicloud.com/portal（独立于 agentarts console）——
-    // 后端认 portal 域自身会话（SessionID / devclouddevuibjtcftk，部分 httpOnly），
-    // 收割域必须含它。loginUrl 前缀要被 siteForLoginUrl 命中：直接指产品站（未登录访问
-    // 会 302 到华为云统一登录，登录弹窗流程不变）；收割是全量 cookie，三个域一并落袋
-    loginUrl: 'https://codearts.huaweicloud.com/portal',
-    homeUrl: 'https://codearts.huaweicloud.com',
-    cookieUrls: [
-      'https://codearts.huaweicloud.com',
-      'https://auth.huaweicloud.com',
-      'https://console.huaweicloud.com',
-    ],
-    verify: 'api',
-    accountName: '码道 CodeArts',
-    hint: '登录码道控制台后自动捕获华为云会话；每日「活动福利 → 每日领取」积分（体验版 100/天，当日有效，活动期至 2026-12-31）由 CD 自动签到。凭据只存本机（账号库加密）。',
-    // 红字警示（面板站点卡统一渲染 site.warnHtml）：码道积分体系需开通华为云账号，
-    // 新注册用户实测可能接到华为云推广电话——提示在先，免得用户莫名
-    warnHtml: '⚠ 新注册华为云账号的用户可能会接到华为云推广电话，介意者请慎用新号开通。',
-  }
+  // ⚠ 码道 CodeArts（issue #40）已于 2026-10-30 撤下，不再提供：
+  //   华为云控制台会话受闲置超时 + WAF 指印（HWWAFSESID / browserCheckResult）绑定，
+  //   浏览器里能靠 SPA 持续续期，本机无法续 —— 实测新鲜会话当日内即失效（网关回登录页），
+  //   且登录窗关早一拍只能收到残缺会话（35 条 vs 完整 47 条）。
+  //   签到要求「每天固定时刻会话有效」，而该会话有效期以小时计 —— 维持它需要用户每天
+  //   重登一次浏览器，那就失去自动化意义。叠加新号可能接到推广电话，按「臭鸡蛋标准」撤下。
+  //   若日后码道开放长期凭据（AK/SK 或 OAuth refresh），可按既有 cookieSites 结构重新接入。
 ];
 
 export const getSite = (id) => COOKIE_SITES.find((s) => s.id === id) || null;

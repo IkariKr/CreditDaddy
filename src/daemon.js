@@ -353,33 +353,6 @@ async function reprobeCookieAccount(site, a) {
       logger.info('COOKIE-SITE', '{name} 就地重探通过（{balance} USD）', { name: site.name, balance: bal.balance });
       return finish({ id: a.id, name: a.name, ok: true, identity: null, balance: bal.balance, quotaSnapshot: { used: 0, total: bal.balance, isCreditBalance: true, at: now } });
     }
-    if (site.id === 'codearts') {
-      // 码道（issue #40）：余额即探活（JSON 才算会话有效；HTML=网关登录页 fallback）。
-      // 重探刷新积分快照并回填身份（旧捕获无 identityHash 的行就地补上，多账号归户靠它）；
-      // claim 签到走 checkin 轮，不在这里做
-      const { fetchCodeartsBalance, fetchCodeartsIdentity } = await import('./codeartsClient.js');
-      const bal = await fetchCodeartsBalance(cookie).catch((e) => ({ ok: false, error: e?.message || 'network' }));
-      if (!bal.ok) return finish({ id: a.id, name: a.name, ok: false, error: bal.authExpired ? '码道会话已失效，请重新登录捕获' : (bal.error || '探测失败') });
-      const ident = await fetchCodeartsIdentity(cookie).catch(() => null);
-      const caIdent = ident?.ok ? ident.identity : null;
-      await withAccounts((list) => {
-        const hit = list.find((x) => x.id === a.id);
-        if (!hit) return;
-        hit.meta = {
-          ...(hit.meta || {}),
-          cookieSiteSession: { cookie, capturedAt: hit.meta?.cookieSiteSession?.capturedAt || now },
-          quotaSnapshot: { used: 0, total: bal.total, isCreditBalance: true, at: now },
-          ...(caIdent ? { identityHash: identityHashOf(caIdent.userId), codeartsIdentity: caIdent } : {}),
-        };
-        if (caIdent?.userId) {
-          hit.uid = caIdent.userId;
-          if (canAutoRename(site, hit)) hit.name = `码道 CodeArts (${caIdent.userName || caIdent.userId})`;
-        }
-        hit.updatedAt = now;
-      });
-      logger.info('COOKIE-SITE', '{name} 就地重探通过（积分 {total}，即将到期 {expiring}，身份 {identity}）', { name: site.name, total: bal.total, expiring: bal.expiring, identity: caIdent?.userName || caIdent?.userId || '—' });
-      return finish({ id: a.id, name: a.name, ok: true, identity: caIdent?.userName || caIdent?.userId || null, balance: bal.remain, quotaSnapshot: { used: 0, total: bal.total, isCreditBalance: true, at: now } });
-    }
     if (site.id === 'doubao') {
       // 豆包（issue #32）：detail 接口一次拿全（会话有效性 + 签到状态 + 累计点数），
       // 重探 = 刷新额度快照；无 10R 同步（豆包不推外部配额卡，错误文案不再误导）
@@ -1247,41 +1220,6 @@ async function handleApi(req, res, url) {
       }
     }
 
-    // 码道 CodeArts（issue #40）：余额接口即探测（JSON=会话有效，HTML=登录页 fallback），
-    // 身份走 /portal/rest/me（多华为云账号按 userId 归户——portal 会话是账号级的）
-    let caIdentity = null;
-    let caBalance = null;
-    if (site.id === 'codearts') {
-      try {
-        const { fetchCodeartsBalance, fetchCodeartsIdentity } = await import('./codeartsClient.js');
-        if (!cookie) {
-          logger.warn('COOKIE-SITE', '{name} 未读到会话 cookie', { name: site.name });
-          return json(res, 400, { error: '未读到码道登录会话，请在登录窗完成登录后再关闭' });
-        }
-        const bal = await fetchCodeartsBalance(cookie);
-        if (!bal.ok) {
-          logger.warn('COOKIE-SITE', '{name} 积分探测被拒:{reason}', { name: site.name, reason: bal.error });
-          return json(res, bal.authExpired ? 401 : 502, {
-            error: bal.authExpired
-              ? '会话不可用，请重新登录该站点后再捕获（探测被拒）'
-              : '探测站点失败：' + (bal.error || ''),
-          });
-        }
-        caBalance = { total: bal.total, used: bal.used, remain: bal.remain, expiring: bal.expiring, at: now };
-        quotaSnapshot = { used: 0, total: bal.total, isCreditBalance: true };
-        // 身份 fail-soft：rest/me 解析不出走无身份单例，不阻断捕获
-        const ident = await fetchCodeartsIdentity(cookie).catch(() => null);
-        if (ident?.ok) {
-          caIdentity = ident.identity;
-          identity = caIdentity.userName || caIdentity.userId;
-        }
-        logger.info('COOKIE-SITE', '{name} 积分探测通过（{total} 分，即将到期 {expiring}，身份 {identity}）', { name: site.name, total: bal.total, expiring: bal.expiring, identity: identity || '—' });
-      } catch (caErr) {
-        logger.warn('COOKIE-SITE', '{name} 积分抓取异常:{err}', { name: site.name, err: caErr.message });
-        return json(res, 502, { error: '探测站点失败：' + (caErr.message || '') });
-      }
-    }
-
     // river（WorkOS 会话线）：cookie 直连 → Bearer → 刷新兑换，探测/身份/额度一步完成。
     // 实测（2026-10-14）：SPA token 只在内存，localStorage 通常空——cookie 是主通道。
     let riverSession = null;
@@ -1391,7 +1329,7 @@ async function handleApi(req, res, url) {
       }
     }
 
-    const ih = identityHashOf(mimoUserId || riverSession?.user?.id || msSession?.id || lcSession?.userId || caIdentity?.userId || identity);
+    const ih = identityHashOf(mimoUserId || riverSession?.user?.id || msSession?.id || lcSession?.userId || identity);
     const quotaMeta = quotaSnapshot ? { quotaSnapshot: { ...quotaSnapshot, at: now } } : {};
     const cred = riverSession ? riverSession.accessToken : cookie;   // 落盘的凭据主体
     const riverUid = riverSession?.user?.id || null;
@@ -1399,17 +1337,14 @@ async function handleApi(req, res, url) {
     await withAccounts((list) => {
       const hit = list.find((a) => a.provider === site.provider && a.meta?.cookieSiteId === site.id
         && (ih ? a.meta?.identityHash === ih : !a.meta?.identityHash));
-      const accName = mimoUserId
-        ? `Xiaomi MiMo (UID: ${mimoUserId})`
-        : (site.id === 'river'
-          ? `River AI (${identity || '会话'})`
-          : (site.id === 'modelscope'
-            ? `ModelScope (${identity || '会话'})`
-            : (site.id === 'longcat'
-                ? `LongCat (${identity || '会话'})`
-                : (site.id === 'codearts'
-                  ? `码道 CodeArts (${caIdentity?.userName || caIdentity?.userId || '会话'})`
-                  : (site.accountName + (identity ? `(${identity})` : ''))))));
+      // 自动行名：按站点取「产品名 (身份)」形状。此前是四层嵌套三元，增删一个站点就得数括号
+      // （撤码道时正是因此改出语法错误）——改成 if 链，增删站点只动一行
+      let accName;
+      if (mimoUserId) accName = `Xiaomi MiMo (UID: ${mimoUserId})`;
+      else if (site.id === 'river') accName = `River AI (${identity || '会话'})`;
+      else if (site.id === 'modelscope') accName = `ModelScope (${identity || '会话'})`;
+      else if (site.id === 'longcat') accName = `LongCat (${identity || '会话'})`;
+      else accName = site.accountName + (identity ? `(${identity})` : '');
       // 自动行名只在「没手改过且现名属自动名家族」时写入（meta.renamed + isAutoGeneratedName 双闸）
       const autoName = (row) => { if (canAutoRename(site, row)) row.name = accName; };
       if (hit) {
@@ -1432,10 +1367,8 @@ async function handleApi(req, res, url) {
           ...(msSession ? { msSession, msBalance } : {}),
           ...(lcPacks ? { longcatPacks: longcatSnapshot(lcPacks) } : {}),
           ...(lcSession ? { longcatSession: lcSession } : {}),
-          ...(caIdentity ? { codeartsIdentity: caIdentity } : {}),
         };
         if (lcSession?.userId) { hit.uid = String(lcSession.userId); autoName(hit); }
-        if (caIdentity?.userId) { hit.uid = caIdentity.userId; autoName(hit); }
         hit.updatedAt = now;
         accountId = hit.id;
       } else {
@@ -1443,7 +1376,7 @@ async function handleApi(req, res, url) {
           name: accName,
           provider: site.provider,
           token: cred,
-          uid: mimoUserId || riverUid || (msSession?.id ? String(msSession.id) : undefined) || (lcSession?.userId ? String(lcSession.userId) : undefined) || (caIdentity?.userId ? String(caIdentity.userId) : undefined) || undefined,
+          uid: mimoUserId || riverUid || (msSession?.id ? String(msSession.id) : undefined) || (lcSession?.userId ? String(lcSession.userId) : undefined) || undefined,
           source: 'web-session',
           meta: {
             cookieSiteId: site.id,
@@ -1457,7 +1390,6 @@ async function handleApi(req, res, url) {
           ...(msSession ? { msSession, msBalance } : {}),
           ...(lcPacks ? { longcatPacks: longcatSnapshot(lcPacks) } : {}),
           ...(lcSession ? { longcatSession: lcSession } : {}),
-          ...(caIdentity ? { codeartsIdentity: caIdentity } : {}),
           },
         });
         acc.verified = true;
@@ -2013,6 +1945,18 @@ export async function startDaemon(port = DEFAULT_PORT, host = '127.0.0.1') {
     if (dead.length) {
       await withAccounts((l) => { l.splice(0, l.length, ...l.filter((a) => a.provider !== 'inception')); });
       logger.info('DAEMON', '已移除 {count} 个 Inception Labs 会话(该渠道已删除,网页会话线不可用)', { count: dead.length });
+    }
+  }
+  // 一次性清理（issue #40）：码道 CodeArts 签到线已撤下（华为云控制台会话受闲置超时 +
+  // WAF 指印绑定，本机无法续期，实测当日内即失效；详见 cookieSites.js 末尾说明）。
+  // 存量账号必须清：provider 已从注册表移除，productOf 会回落到 qoder，
+  // 于是它会在 Qoder 页显示成一条点不动、签不了、也删不掉的幽灵行。命中才落盘。
+  {
+    const list = await loadAccounts();
+    const dead = list.filter((a) => a.provider === 'codearts');
+    if (dead.length) {
+      await withAccounts((l) => { l.splice(0, l.length, ...l.filter((a) => a.provider !== 'codearts')); });
+      logger.info('DAEMON', '已移除 {count} 个码道 CodeArts 会话(该渠道已撤线,华为云会话无法保活)', { count: dead.length });
     }
   }
   let panelHtml = '';

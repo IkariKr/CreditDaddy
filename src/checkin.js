@@ -414,24 +414,15 @@ const WS_WATCH_INTERVAL_MS = 6 * 3600 * 1000;   // 每 6 小时一检（cookie �
  */
 export async function runWebSessionWatchTick() {
   const { probeWebSession } = await import('./qoderClient.js');
-  const { fetchCodeartsBalance } = await import('./codeartsClient.js');
   const accounts = await loadAccounts();
-  const qoders = accounts.filter((a) => (String(a.provider || '').startsWith('qoder')
-      && a.meta?.qoderWebSession?.cookie)
-    || (a.provider === 'codearts' && a.meta?.cookieSiteSession?.cookie));
+  const qoders = accounts.filter((a) => String(a.provider || '').startsWith('qoder')
+    && a.meta?.qoderWebSession?.cookie);
   for (const a of qoders) {
-    const isCodearts = a.provider === 'codearts';
-    const cookie = isCodearts ? a.meta.cookieSiteSession.cookie : a.meta.qoderWebSession.cookie;
+    const cookie = a.meta.qoderWebSession.cookie;
     let dead = false;
     try {
-      if (isCodearts) {
-        // 码道：余额接口只在会话有效时回 JSON；HTML fallback = 失效。网络错误（ok=false 无 authExpired）不动标记
-        const r = await fetchCodeartsBalance(cookie);
-        dead = Boolean(r.authExpired);
-      } else {
-        const probe = await probeWebSession(a.provider, cookie);
-        dead = !probe?.user_id;   // 探测接口不认这份 cookie = 失效
-      }
+      const probe = await probeWebSession(a.provider, cookie);
+      dead = !probe?.user_id;   // 探测接口不认这份 cookie = 失效
     } catch { continue; }       // 网络异常保守跳过（下一轮再试），只有明确被拒才判死
     if (dead !== Boolean(a.meta.qoderWebDead)) {
       await withAccounts((list) => {
