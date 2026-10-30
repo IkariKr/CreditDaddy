@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
+import { anyProcRunning, invalidateProcCache } from './winProc.js';
 
 const EXE_NAME = 'Loomy.exe';
 
@@ -66,14 +67,9 @@ export function writeCredential({ session, userid, phone = '' }) {
 }
 
 /** 探测 Loomy 是否在运行 */
-export function loomyRunning() {
+export function loomyRunning({ sync = false } = {}) {
   if (process.platform !== 'win32') return false;
-  try {
-    const out = execFileSync('tasklist.exe',
-      ['/FI', `IMAGENAME eq ${EXE_NAME}`, '/NH'],
-      { windowsHide: true, encoding: 'utf8', timeout: 8000 });
-    return out.toLowerCase().includes(EXE_NAME.toLowerCase()) && !/no tasks|没有找到|没有任务/i.test(out);
-  } catch { return false; }
+  return anyProcRunning(EXE_NAME, { sync });
 }
 
 /** 获取本机 Loomy.exe 路径 */
@@ -111,16 +107,19 @@ const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0,
 
 export function terminateLoomy({ timeoutMs = 8000 } = {}) {
   if (process.platform !== 'win32') return { closed: false, supported: false };
-  if (!loomyRunning()) return { closed: false, running: false };
+  if (!loomyRunning({ sync: true })) return { closed: false, running: false };
   try { execFileSync('taskkill.exe', ['/IM', EXE_NAME, '/T'], { windowsHide: true, stdio: 'ignore', timeout: 15_000 }); } catch {}
+  invalidateProcCache();
   let deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline && loomyRunning()) nap(250);
-  if (loomyRunning()) {
+  while (Date.now() < deadline && loomyRunning({ sync: true })) nap(250);
+  if (loomyRunning({ sync: true })) {
     try { execFileSync('taskkill.exe', ['/IM', EXE_NAME, '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 15_000 }); } catch {}
+    invalidateProcCache();
     deadline = Date.now() + 3000;
-    while (Date.now() < deadline && loomyRunning()) nap(250);
+    while (Date.now() < deadline && loomyRunning({ sync: true })) nap(250);
   }
-  return { closed: !loomyRunning(), running: loomyRunning() };
+  const still = loomyRunning({ sync: true });
+  return { closed: !still, running: still };
 }
 
 /** 当前客户端登录的 token（面板「客户端当前」标识用） */
