@@ -62,6 +62,7 @@ import { liveToAccount as mirasimLiveAccount, switchTo as mirasimSwitchTo, curre
 import { liveToAccount as catpawLiveAccount, switchTo as catpawSwitchTo, currentCatpawToken, detectCatpaw, terminateCatpaw } from './catpawLocal.js';
 import { liveToAccount as traeLiveAccount, detectTrae, switchTo as traeSwitchTo, snapshotLive as traeSnapshotLive } from './traeLocal.js';
 import { liveToAccount as minimaxLiveAccount, detectMiniMax, currentMiniMaxUid, currentMiniMaxToken, currentMiniMaxRecordKey } from './minimaxLocal.js';
+import { liveToAccount as loomyLiveAccount, switchTo as loomySwitchTo, currentLoomyToken, detectLoomy, terminateLoomy } from './loomyLocal.js';
 import * as minimaxGateway from './minimaxGateway.js';
 import * as traeGateway from './traeGateway.js';
 import { fetchClaimPlans, claimPlan, fetchCaptchaConfig, proxyFirst, setProxyFirst, proxyUrl, setProxyUrl, autoClaimEnabled, autoClaimUntil, setAutoClaimEnabled, claimIntervalMin, setClaimIntervalMin, claimWindowMin, setClaimWindowMin } from './zcodeClient.js';
@@ -77,7 +78,7 @@ import { detectInstalls, scanLocalTokens, putCandidate, peekCandidate } from './
 import { PROVIDER_LABEL, APP_VERSION, PROVIDERS, PROJECT_URL } from './constants.js';
 import { getLocale, setLocale, normalizeLocale, loadDict, t as tr } from './i18n.js';
 
-const PRODUCT_IDS = ['qoder', 'workbuddy', 'zcode', 'mirasim', 'catpaw', 'trae', 'minimax'];
+const PRODUCT_IDS = ['qoder', 'workbuddy', 'zcode', 'mirasim', 'catpaw', 'trae', 'minimax', 'loomy'];
 
 /** 面板访问密码：面板「设置」写入的 settings.json.panelKey 优先（可设 / 可关）；
  *  未设置（或被面板关闭）时回退环境变量 CREDITDADDY_PASSWORD（fnOS / 命令行部署注入），
@@ -983,6 +984,28 @@ async function handleApi(req, res, url) {
         return json(res, e.catpawRunning ? 409 : 400, { error: e.message, code: e.catpawRunning ? 'CATPAW_RUNNING' : undefined });
       }
     }
+    if (target.provider === 'loomy') {
+      try {
+        const live = await loomyLiveAccount();
+        if (live && live.token && live.token !== target.token) {
+          await addAccount(live, { trusted: true }).catch((e) => logger.warn('DAEMON', '同步 Loomy 当前登录失败:{err}', { err: e.message }));
+        }
+      } catch (e) {}
+      try {
+        let closedClient = false;
+        if (body?.force === true) {
+          const t = terminateLoomy();
+          closedClient = t.closed === true;
+          if (closedClient) logger.info('DAEMON', '已关闭 Loomy 客户端(强制切换)', {});
+          else if (t.running) logger.warn('DAEMON', '未能完全结束 Loomy 进程,继续强制切换', {});
+        }
+        const r = await loomySwitchTo(target, { force: body?.force === true });
+        logger.info('DAEMON', r.alreadyActive ? 'Loomy 当前已是 {name}' : 'Loomy 已切换到 {name}(重新打开客户端生效)', { name: target.name || target.id });
+        return json(res, 200, { ok: true, closedClient, ...r });
+      } catch (e) {
+        return json(res, e.loomyRunning ? 409 : 400, { error: e.message, code: e.loomyRunning ? 'LOOMY_RUNNING' : undefined });
+      }
+    }
     if (target.provider === 'qoder' || target.provider === 'qoder-cn') {
       // 防丢号：先把本机当前登录的最新 auth 快照回写账号库（客户端会静默刷新 token，旧快照可能已失效），再覆盖
       try {
@@ -1473,9 +1496,43 @@ async function handleApi(req, res, url) {
     return json(res, 200, { results });
   }
 
+  // ── 讯飞 Loomy 手机号验证码两步直登 ──
+  if (p === '/api/loomy/sms/send' && method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    const { phone } = body || {};
+    try {
+      const { sendLoomySms } = await import('./loomyAuth.js');
+      const r = await sendLoomySms(phone);
+      return json(res, 200, r);
+    } catch (e) {
+      return json(res, 400, { error: e.message });
+    }
+  }
+  if (p === '/api/loomy/sms/login' && method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    const { phone, code, msgid } = body || {};
+    try {
+      const { loginLoomyBySms } = await import('./loomyAuth.js');
+      const r = await loginLoomyBySms({ phone, code, msgid });
+      const phoneMasked = r.phone ? `${r.phone.slice(0, 3)}****${r.phone.slice(-4)}` : '';
+      const account = await addAccount({
+        provider: 'loomy',
+        token: r.session,
+        uid: r.userid,
+        name: phoneMasked ? `Loomy (${phoneMasked})` : `Loomy (${r.userid.slice(-6)})`,
+        source: 'sms-login',
+        meta: { phone: r.phone, loggedInAt: new Date().toISOString() },
+      }, { trusted: true });
+      logger.info('DAEMON', 'Loomy 手机号直登成功:{name}', { name: account.name || account.uid });
+      return json(res, 200, { success: true, account });
+    } catch (e) {
+      return json(res, 400, { error: e.message });
+    }
+  }
+
   // ── 本机检测 / 凭据扫描 ──
   if (p === '/api/local/detect' && method === 'GET') {
-    return json(res, 200, { apps: detectQoderApps(), workbuddyDir: workbuddyAuthDir(), zcode: detectZcode(), mirasim: detectMirasim(), catpaw: detectCatpaw(), trae: detectTrae(), minimax: detectMiniMax(), legacy: detectInstalls() });
+    return json(res, 200, { apps: detectQoderApps(), workbuddyDir: workbuddyAuthDir(), zcode: detectZcode(), mirasim: detectMirasim(), catpaw: detectCatpaw(), trae: detectTrae(), minimax: detectMiniMax(), loomy: detectLoomy(), legacy: detectInstalls() });
   }
   if (p === '/api/local/scan' && method === 'POST') {
     const existing = await loadAccounts();
@@ -1542,6 +1599,11 @@ async function handleApi(req, res, url) {
       const mm = await minimaxLiveAccount();
       if (mm) addRecord(mm, { source: 'MiniMax 当前登录', current: true });
     } catch (e) { errors.push({ file: '~/.minimax/auth/.../auth.json', error: e.message }); }
+    // 8) 讯飞 Loomy 客户端：读取 Public\Loomy\userData\auth-session.json 当前登录
+    try {
+      const lm = await loomyLiveAccount();
+      if (lm) addRecord(lm, { source: 'Loomy 当前登录', current: true });
+    } catch (e) { errors.push({ file: 'loomy/auth-session.json', error: e.message }); }
     // 8) 旧版 VS Code 系 Qoder IDE / CLI：明文 token 扫描（归属需用户选择）
     const det = detectInstalls();
     const dirs = det.ideDataDirs.filter(d => d.exists).map(d => d.path);
@@ -1786,6 +1848,8 @@ async function handleApi(req, res, url) {
       traeClient: { installed: traeDet.clientInstalled, signedIn: traeDet.signedIn, running: traeDet.running },
       minimaxCurrentUid: mmLiveUid,
       minimaxClient: (() => { const d = detectMiniMax(); return { installed: d.installed, signedIn: d.signedIn, running: d.running }; })(),
+      loomyCurrentToken: currentLoomyToken(),
+      loomyClient: (() => { const d = detectLoomy(); return { installed: d.clientInstalled, signedIn: d.signedIn, running: d.running }; })(),
       keyRequired: panelKeyRequired(),
     });
   }

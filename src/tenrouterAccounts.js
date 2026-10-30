@@ -22,6 +22,7 @@ export const TENROUTER_PROVIDER_MAP = {
   workbuddy: 'codebuddy-cn',
   'workbuddy-intl': 'codebuddy-intl',
   tokenharbor: 'tokenharbor-free',   // #23：会话 cookie 只喂「额度监控卡」(freeTier,不走路由);tokenharbor 钱包卡留给 sk- 运输 key
+  loomy: 'loomy',
   // zcode → glm：等 zcode 反代就绪后补一行（同步流程已就绪，无需改代码）
 };
 

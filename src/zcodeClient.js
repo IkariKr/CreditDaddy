@@ -343,9 +343,21 @@ export async function fetchJsonRace(url, { method = 'GET', headers = {}, body = 
   if (errs.length > 1) {
     const detail = errs.map(([w, e]) => `${w === 'direct' ? '直连' : '代理'}: ${e?.message || e}`).join('；');
     const last = errs[errs.length - 1][1];
-    // 在最后一条错误上改写 message（保留 err.code / instanceof，调用方判定不受影响）
-    last.message = detail;
-    throw last;
+    // 优先在最后一条错误上改写 message（保留 err.code / instanceof，调用方判定不受影响）。
+    // 但 AbortSignal.timeout / fetch 的 abort reason 是 DOMException——message 只有 getter，
+    // 赋值会抛 TypeError 把真实网络错误整个吞掉（2026-10-30 ZCode 活动查询报
+    // 「Cannot set property message」即此，真因被掩盖）。descriptor 不可写时退回包一层
+    // 普通 Error，原始错误挂 cause、code 透传。
+    try {
+      last.message = detail;
+      throw last;
+    } catch (e) {
+      if (e === last) throw last;                       // 赋值成功，原样上抛
+      const wrapped = new Error(detail);                // 赋值抛错（getter-only message）
+      wrapped.cause = last;
+      if (last?.code) wrapped.code = last.code;
+      throw wrapped;
+    }
   }
   throw errs[0]?.[1] || new Error('fetch failed');
 }

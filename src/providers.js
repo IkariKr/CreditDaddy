@@ -17,6 +17,7 @@ import { fetchCatpawQuota, fetchCatpawProfile } from './catpawClient.js';
 import { fetchTraeQuota, checkinTrae, verifyTraeAccount } from './traeClient.js';
 import { fetchMiniMaxQuota, checkinMiniMax, verifyMiniMaxAccount } from './minimaxClient.js';
 import { fetchDoubaoStatus, checkinDoubao } from './doubaoClient.js';
+import { fetchLoomyQuota, verifyLoomyAccount } from './loomyClient.js';
 /** 从 userinfo 响应中挑一个可读的显示名 */
 export function displayNameFrom(ui) {
   const pick = [ui?.nickname, ui?.name, ui?.username, ui?.email]
@@ -229,6 +230,11 @@ const PRODUCTS = {
         empty: st.totalAmount === 0 && !st.checkin,
       };
     },
+  },
+  loomy: {
+    label: '讯飞 Loomy',
+    quota: (account) => fetchLoomyQuota(account),
+    verify: (account) => verifyLoomyAccount(account),
   },
   // 码道 CodeArts（issue #40）已于 2026-10-30 撤下：华为云控制台会话受闲置超时 +
   // WAF 指印绑定，本机无法续期，实测当日内即失效，无法支撑每日定时签到。详见

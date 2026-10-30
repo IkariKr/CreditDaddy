@@ -197,6 +197,8 @@
   html[data-theme="dark"] .badge.prod.trae { color: #6ee7b7; }
   .badge.prod.minimax { color: #e11d48; background: rgba(244,63,94,.14); }
   html[data-theme="dark"] .badge.prod.minimax { color: #fda4af; }
+  .badge.prod.loomy { color: #0284c7; background: rgba(14,165,233,.14); }
+  html[data-theme="dark"] .badge.prod.loomy { color: #38bdf8; }
   .seg-ctl { display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--hover); }
   .seg-ctl button { border: none; background: transparent; color: var(--text-2); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
   .seg-ctl button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
@@ -341,7 +343,7 @@
   .prod-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .prod-name { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .dot.qoder { background: #7c3aed; } .dot.workbuddy { background: #14b8a6; } .dot.zcode { background: #2563eb; } .dot.mirasim { background: #64748b; } .dot.catpaw { background: #f97316; } .dot.trae { background: #10b981; } .dot.minimax { background: #f43f5e; }
+  .dot.qoder { background: #7c3aed; } .dot.workbuddy { background: #14b8a6; } .dot.zcode { background: #2563eb; } .dot.mirasim { background: #64748b; } .dot.catpaw { background: #f97316; } .dot.trae { background: #10b981; } .dot.minimax { background: #f43f5e; } .dot.loomy { background: #0284c7; }
   .prod-go { color: var(--text-3); font-size: 12px; white-space: nowrap; display: inline-flex; align-items: center; gap: 2px; }
   .prod-go svg { width: 12px; height: 12px; transition: transform .15s; }
   .prodcard:hover .prod-go { color: var(--text); }
@@ -555,6 +557,7 @@
     <button data-view="catpaw"><span data-i18n="妙手">妙手</span><span class="cnt" id="cnt-catpaw">0</span></button>
     <button data-view="trae">Trae<span class="cnt" id="cnt-trae">0</span></button>
     <button data-view="minimax">MiniMax<span class="cnt" id="cnt-minimax">0</span></button>
+    <button data-view="loomy">Loomy<span class="cnt" id="cnt-loomy">0</span></button>
     <button data-view="free"><span data-i18n="网页会话">网页会话</span><span class="cnt" id="cnt-free">0</span></button>
     <button data-view="tenrouter">10Router<span class="cnt" id="cnt-tenrouter">–</span></button>
   </nav>
@@ -680,6 +683,7 @@
     <div class="modal-title"><span data-i18n="添加账号">添加账号</span><button class="close" data-close>✕</button></div>
     <div class="tabs">
       <button class="tab active" data-tab="local" data-i18n="本机导入">本机导入</button>
+      <button class="tab" data-tab="sms" data-i18n="手机登录" id="tab-sms">手机登录</button>
       <button class="tab" data-tab="device" data-i18n="浏览器登录">浏览器登录</button>
       <button class="tab" data-tab="token" data-i18n="粘贴 Token">粘贴 Token</button>
     </div>
@@ -688,6 +692,24 @@
       <div class="hint" id="local-hint"></div>
       <div class="row" style="margin-top:10px"><button class="btn primary" id="btn-scan" data-i18n="重新扫描">重新扫描</button><span class="hint" id="scan-status"></span></div>
       <div class="box" id="scan-result"><div class="hint" data-i18n="点击「重新扫描」">点击「重新扫描」</div></div>
+    </div>
+
+    <div class="pane" data-pane="sms">
+      <div class="hint" id="sms-hint" style="margin-bottom:10px">讯飞 Loomy 手机号直登：无需打开桌面客户端，输入手机号获取验证码，直接换取 14 天有效 Session 并自动存入账号库。</div>
+      <div class="field">
+        <label>手机号</label>
+        <div style="display:flex;gap:8px">
+          <input class="input" id="loomy-phone" placeholder="请输入 11 位手机号" maxlength="11">
+          <button class="btn" id="btn-loomy-sms" style="white-space:nowrap;width:120px">获取验证码</button>
+        </div>
+      </div>
+      <div class="field" id="loomy-code-field" style="display:none">
+        <label>短信验证码</label>
+        <input class="input" id="loomy-code" placeholder="请输入 6 位短信验证码" maxlength="6">
+      </div>
+      <div class="modal-actions" id="loomy-login-actions" style="display:none">
+        <button class="btn primary" id="btn-loomy-login">登录并导入</button>
+      </div>
     </div>
 
     <div class="pane" data-pane="device">
@@ -711,7 +733,7 @@
     <div class="pane" data-pane="token">
       <div class="field">
         <label data-i18n="版本">版本</label>
-        <select class="input" id="f-provider"><option value="qoder">Qoder 国际版</option><option value="qoder-cn">Qoder 国内版</option><option value="workbuddy" data-i18n="WorkBuddy 国内版">WorkBuddy 国内版</option><option value="workbuddy-intl" data-i18n="WorkBuddy 国际版">WorkBuddy 国际版</option><option value="minimax">MiniMax</option></select>
+        <select class="input" id="f-provider"><option value="qoder">Qoder 国际版</option><option value="qoder-cn">Qoder 国内版</option><option value="workbuddy" data-i18n="WorkBuddy 国内版">WorkBuddy 国内版</option><option value="workbuddy-intl" data-i18n="WorkBuddy 国际版">WorkBuddy 国际版</option><option value="minimax">MiniMax</option><option value="loomy">讯飞 Loomy</option></select>
       </div>
       <div class="field"><label data-i18n="备注名（可选）">备注名（可选）</label><input class="input" id="f-name" placeholder="留空则自动读取昵称"></div>
       <div class="field"><label>Token</label><input class="input mono" id="f-token" placeholder="dt-… / jt-… 或 PAT（pt-…，自动兑换）"></div>
@@ -726,7 +748,7 @@
     <div class="modal-title"><span data-i18n="导出账号">导出账号</span><button class="close" data-close>✕</button></div>
     <div class="field">
       <label data-i18n="范围">范围</label>
-      <select class="input" id="ex-provider"><option value="" data-i18n="全部账号">全部账号</option><option value="p:qoder" data-i18n="Qoder（全部）">Qoder（全部）</option><option value="qoder" data-i18n="仅 Qoder 国际版">仅 Qoder 国际版</option><option value="qoder-cn" data-i18n="仅 Qoder 国内版">仅 Qoder 国内版</option><option value="p:workbuddy" data-i18n="WorkBuddy（全部）">WorkBuddy（全部）</option><option value="workbuddy" data-i18n="仅 WorkBuddy 国内版">仅 WorkBuddy 国内版</option><option value="workbuddy-intl" data-i18n="仅 WorkBuddy 国际版">仅 WorkBuddy 国际版</option><option value="zcode">ZCode</option><option value="p:mirasim">mirasim</option><option value="p:catpaw" data-i18n="妙手">妙手</option><option value="p:trae">Trae</option><option value="p:minimax">MiniMax</option></select>
+      <select class="input" id="ex-provider"><option value="" data-i18n="全部账号">全部账号</option><option value="p:qoder" data-i18n="Qoder（全部）">Qoder（全部）</option><option value="qoder" data-i18n="仅 Qoder 国际版">仅 Qoder 国际版</option><option value="qoder-cn" data-i18n="仅 Qoder 国内版">仅 Qoder 国内版</option><option value="p:workbuddy" data-i18n="WorkBuddy（全部）">WorkBuddy（全部）</option><option value="workbuddy" data-i18n="仅 WorkBuddy 国内版">仅 WorkBuddy 国内版</option><option value="workbuddy-intl" data-i18n="仅 WorkBuddy 国际版">仅 WorkBuddy 国际版</option><option value="zcode">ZCode</option><option value="p:mirasim">mirasim</option><option value="p:catpaw" data-i18n="妙手">妙手</option><option value="p:trae">Trae</option><option value="p:minimax">MiniMax</option><option value="p:loomy">Loomy</option></select>
     </div>
     <div class="field">
       <label data-i18n="加密口令（必填）">加密口令（必填）</label>
@@ -1033,7 +1055,7 @@ const I = {
 
 const $ = (id) => document.getElementById(id);
 const state = { accounts: [], quotas: {}, status: null, busy: {}, view: 'dash', region: '', addProduct: '', logTab: 'run', logLevel: 'all', locale: 'zh-CN' };
-const VIEWS = ['dash', 'qoder', 'workbuddy', 'zcode', 'mirasim', 'catpaw', 'trae', 'minimax', 'free', 'tenrouter'];
+const VIEWS = ['dash', 'qoder', 'workbuddy', 'zcode', 'mirasim', 'catpaw', 'trae', 'minimax', 'loomy', 'free', 'tenrouter'];
 // 10Router 集成：config 来自 /api/tenrouter，quotas 来自 /api/tenrouter/quotas
 const tr = { config: null, quotas: null, error: null, loading: false, syncing: false, accountsSyncing: false };
 const PRODUCTS = [
@@ -1044,6 +1066,7 @@ const PRODUCTS = [
   { id: 'catpaw', label: '妙手' },
   { id: 'trae', label: 'Trae' },
   { id: 'minimax', label: 'MiniMax' },
+  { id: 'loomy', label: 'Loomy' },
 ];
 const prodLabel = (id) => T((PRODUCTS.find((x) => x.id === id) || { label: id }).label);
 
@@ -1056,6 +1079,7 @@ const COMPONENTS = [
   { id: 'catpaw', label: '妙手' },
   { id: 'trae', label: 'Trae' },
   { id: 'minimax', label: 'MiniMax' },
+  { id: 'loomy', label: 'Loomy' },
   { id: 'free', label: '网页会话' },
   { id: 'tenrouter', label: '10Router' },
 ];
@@ -1182,12 +1206,13 @@ const PROV = {
   catpaw: { prod: 'catpaw', prodLabel: '妙手', region: '', cls: '' },
   trae: { prod: 'trae', prodLabel: 'Trae', region: '', cls: '' },
   minimax: { prod: 'minimax', prodLabel: 'MiniMax', region: '', cls: '' },
+  loomy: { prod: 'loomy', prodLabel: 'Loomy', region: '', cls: '' },
 };
 // 支持每日签到的产品（ZCode / mirasim / 妙手 额度靠套餐或滚动窗口发放，不做签到）
 const CHECKIN_PRODUCTS = new Set(['qoder', 'workbuddy', 'trae', 'minimax']);
-const CLIENT_LABEL = { qoder: 'Qoder', workbuddy: 'WorkBuddy', zcode: 'ZCode', mirasim: 'mirasim', catpaw: '妙手', trae: 'Trae', minimax: 'MiniMax' };
+const CLIENT_LABEL = { qoder: 'Qoder', workbuddy: 'WorkBuddy', zcode: 'ZCode', mirasim: 'mirasim', catpaw: '妙手', trae: 'Trae', minimax: 'MiniMax', loomy: 'Loomy' };
 // 额度单位为 Credits/时长而非「积分」口径的产品（不计入剩余积分合计）
-const CREDIT_VIEWS = new Set(['zcode', 'mirasim', 'catpaw']);
+const CREDIT_VIEWS = new Set(['zcode', 'mirasim', 'catpaw', 'loomy']);
 // 网关调用日志：tag → 所属产品页（无网关的产品不展示日志卡）
 const GW_LOG_TAG = { zcode: 'ZCODE-GW', minimax: 'MINIMAX-GW', trae: 'TRAE-GW' };
 const provOf = (p) => PROV[p] || { prod: 'qoder', prodLabel: p, region: '', cls: '' };
@@ -1789,6 +1814,7 @@ function isClientCurrent(a) {
   if (a.product === 'catpaw') return Boolean(a.uid && s.catpawCurrentUid && s.catpawCurrentUid === a.uid);
   if (a.product === 'trae') return Boolean(a.uid && s.traeCurrentUid && s.traeCurrentUid === a.uid);
   if (a.product === 'minimax') return Boolean(a.uid && s.minimaxCurrentUid && s.minimaxCurrentUid === a.uid);
+  if (a.product === 'loomy') return Boolean(a.token && s.loomyCurrentToken && s.loomyCurrentToken === a.token);
   if (a.product === 'zcode') {
     const id = s.zcodeCurrentIdentity;
     return Boolean(id && ((a.uid && id.uid != null && String(id.uid) === String(a.uid)) || (a.email && id.email && id.email === a.email)));
@@ -1832,6 +1858,7 @@ const EMPTY_TIP = {
   catpaw: '还没有妙手账号。<br>点「添加账号」可读取本机妙手（美团 CatPaw）客户端当前登录的账号（本地解密凭据，token 不出本机）。',
   trae: '还没有 Trae 账号。<br>点「添加账号 → 本机导入」可读取本机 Trae 客户端当前登录的账号（本地解密 storage.json 凭据，token 不出本机）。多个账号需先在 Trae 里分别登录并逐个导入。',
   minimax: '还没有 MiniMax 账号。<br>点「添加账号 → 本机导入」可读取本机 MiniMax Code 客户端当前登录的账号，或用浏览器登录 / 粘贴 Bearer Token 添加。',
+  loomy: '还没有 Loomy 账号。<br>点「添加账号 → 本机导入」可读取本机 Loomy 客户端当前登录的账号（Token 有效期约 14 天，免客户端运行），支持多账号保存切换，并可一键同步给 10Router 网关。',
 };
 
 function renderProd() {
@@ -2084,8 +2111,12 @@ function renderStatus() {
   // 产品相关提示只在对应标签页出现
   const hasIntl = state.view === 'qoder' && state.region !== 'cn' && state.accounts.some((a) => a.provider === 'qoder');
   const n = $('notice');
-  n.classList.toggle('info', state.view === 'zcode' || state.view === 'mirasim' || state.view === 'catpaw' || state.view === 'trae' || state.view === 'minimax' || (state.view === 'workbuddy' && s.workbuddyClient && s.workbuddyClient.installed === false) || (hasIntl && Boolean(s.riskIdentity)));
-  if (state.view === 'minimax') {
+  n.classList.toggle('info', state.view === 'zcode' || state.view === 'mirasim' || state.view === 'catpaw' || state.view === 'trae' || state.view === 'minimax' || state.view === 'loomy' || (state.view === 'workbuddy' && s.workbuddyClient && s.workbuddyClient.installed === false) || (hasIntl && Boolean(s.riskIdentity)));
+  if (state.view === 'loomy') {
+    n.style.display = '';
+    n.innerHTML = T('讯飞 Loomy 桌面 AI 工作搭子。凭据由本机客户端（Public\\Loomy\\userData\\auth-session.json）读取导入，有效期约 14 天。支持多账号保存切换，并可一键同步给 10Router 网关作为上游连接池。')
+      + loomyClientChip(s);
+  } else if (state.view === 'minimax') {
     n.style.display = '';
     n.innerHTML = T('<div class="z-row"><span class="z-label">每日签到</span><span class="z-text">每日签到领 800~2000 积分 + 400 连签加成。支持自动检测本机 MiniMax Code 凭据与 Bearer Token 导入，自带标准 Anthropic 本地网关。</span></div>');
   } else if (state.view === 'trae') {
@@ -2148,6 +2179,13 @@ function catpawClientChip(s) {
   const canOpen = window.creditdaddy && typeof window.creditdaddy.openCatpawClient === 'function';
   return T(' <span class="dim">客户端：') + (c.running ? T('运行中') : T('未运行')) + (c.signedIn ? '' : T(' · 未登录')) + '</span>'
     + (canOpen ? T(' <button class="btn" id="btn-cpopen" style="margin-left:4px" title="打开本机妙手客户端">打开客户端</button>') : '');
+}
+
+// Loomy 客户端状态芯片
+function loomyClientChip(s) {
+  const c = s.loomyClient || {};
+  if (!c.installed) return T(' <span class="dim">客户端：未安装（本机导入 / 切换需要 Windows Loomy 客户端）</span>');
+  return T(' <span class="dim">客户端：') + (c.running ? T('运行中') : T('未运行')) + (c.signedIn ? '' : T(' · 未登录')) + '</span>';
 }
 
 // Qoder 设备身份组件（Linux / fnOS）
@@ -3513,7 +3551,9 @@ async function onCardClick(e) {
         ? T('\n需先退出 Mirasim；切换后重新打开即为新账号。当前登录会先保存到 CreditDaddy，不会丢号。')
         : a && a.product === 'catpaw'
           ? T('\n需先退出妙手；切换后重新打开妙手即为新账号。当前登录会先保存到 CreditDaddy，不会丢号。')
-          : a && a.product === 'trae'
+          : a && a.product === 'loomy'
+            ? T('\n需先退出 Loomy；切换后重新打开 Loomy 即为新账号。当前登录会先保存到 CreditDaddy，不会丢号。')
+            : a && a.product === 'trae'
             ? T('\n需先退出 Trae；切换后重新打开 Trae 即为新账号。当前登录会先自动快照保存到 CreditDaddy，不会丢号。')
             : a && a.product === 'qoder'
               ? T('\n需先退出 Qoder；切换后重新打开 Qoder 即为新账号。运行中的 Qoder 退出时会把旧登录写回去，可选「关闭并强制切换」代为关进程。')
@@ -3524,7 +3564,7 @@ async function onCardClick(e) {
       let r;
       try { r = await doSwitch(false); }
       catch (err) {
-        if (err.code !== 'ZCODE_RUNNING' && err.code !== 'MIRASIM_RUNNING' && err.code !== 'CATPAW_RUNNING' && err.code !== 'TRAE_RUNNING' && err.code !== 'QODER_RUNNING') throw err;
+        if (err.code !== 'ZCODE_RUNNING' && err.code !== 'MIRASIM_RUNNING' && err.code !== 'CATPAW_RUNNING' && err.code !== 'TRAE_RUNNING' && err.code !== 'QODER_RUNNING' && err.code !== 'LOOMY_RUNNING') throw err;
         if (!(await uiConfirm(err.message + T('\n\n仍要强制切换吗？强制切换会先关闭客户端再写入登录，重新打开客户端即为新账号。'), client + T(' 正在运行'), T('关闭并强制切换')))) return;
         r = await doSwitch(true);
       }
@@ -4104,11 +4144,18 @@ const LOCAL_HINT = {
   catpaw: '读取本机妙手（美团 CatPaw）客户端当前登录的账号（本地解密 %APPDATA%\\catpaw-moon\\catx-credential.json），token 不出本机。',
   trae: '读取本机 Trae 客户端当前登录的账号（本地解密 <客户端数据目录>\\User\\globalStorage\\storage.json 的 tc 信封），token 不出本机。',
   minimax: '读取本机 MiniMax Code 客户端当前登录的账号（~/.minimax/auth/.../auth.json），token 不出本机。',
+  loomy: '读取本机 Loomy 客户端当前登录的账号（自动读取 Windows 本机 Public\\Loomy 用户凭据），Session 有效期约 14 天，支持一键同步至 10Router。',
 };
 function openAdd(product) {
   state.addProduct = product || '';
-  // 各产品支持的添加方式：MiniMax 三种都支持（浏览器登录 = 官方设备码授权，独立凭据链不与本机客户端互斥）
-  const tabShown = { local: true, device: product !== 'mirasim' && product !== 'catpaw' && product !== 'trae', token: product !== 'zcode' && product !== 'mirasim' && product !== 'catpaw' && product !== 'trae' };
+  const isLoomy = product === 'loomy';
+  // 各产品支持的添加方式
+  const tabShown = {
+    local: true,
+    device: product !== 'mirasim' && product !== 'catpaw' && product !== 'trae' && product !== 'loomy',
+    token: product !== 'zcode' && product !== 'mirasim' && product !== 'catpaw' && product !== 'trae',
+    sms: isLoomy || !product,
+  };
   document.querySelectorAll('#m-add .tab').forEach((t) => { t.style.display = tabShown[t.dataset.tab] ? '' : 'none'; });
   $('local-hint').textContent = T(LOCAL_HINT[state.addProduct]);
   let first = null;
@@ -4129,8 +4176,8 @@ function openAdd(product) {
   $('dev-hint').textContent = (hasIncognito() ? T('在内置隐私窗口里登录（不带出系统浏览器已登录的账号），') : T('在浏览器里登录并授权，'))
     + T('完成后账号自动添加。') + (product === 'qoder' ? '' : T('WorkBuddy / ZCode 用浏览器登录的账号同样可以一键切换客户端。'));
   openModal('m-add');
-  switchTab('local');
-  localScan();
+  switchTab(isLoomy ? 'sms' : 'local');
+  if (!isLoomy) localScan();
 }
 
 // 本机导入
@@ -4266,6 +4313,75 @@ async function addToken() {
   } catch (e) { toast(e.message, false); }
   b.disabled = false;
 }
+
+// ── 讯飞 Loomy 手机号直登 ──
+let loomyMsgId = '';
+let loomyCountdown = 0;
+let loomyTimer = null;
+
+$('btn-loomy-sms').addEventListener('click', async () => {
+  const phone = $('loomy-phone').value.trim();
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    return toast(T('请输入正确的 11 位手机号'), false);
+  }
+  const btn = $('btn-loomy-sms');
+  btn.disabled = true;
+  btn.textContent = T('发送中…');
+  try {
+    const r = await api('/api/loomy/sms/send', { json: { phone } });
+    loomyMsgId = r.msgid;
+    toast(T('验证码已发送至手机，请查收短信'));
+    $('loomy-code-field').style.display = '';
+    $('loomy-login-actions').style.display = '';
+    loomyCountdown = 60;
+    btn.textContent = '60s';
+    if (loomyTimer) clearInterval(loomyTimer);
+    loomyTimer = setInterval(() => {
+      loomyCountdown--;
+      if (loomyCountdown <= 0) {
+        clearInterval(loomyTimer);
+        loomyTimer = null;
+        btn.disabled = false;
+        btn.textContent = T('重新获取');
+      } else {
+        btn.textContent = `${loomyCountdown}s`;
+      }
+    }, 1000);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = T('获取验证码');
+    toast(e.message, false);
+  }
+});
+
+$('btn-loomy-login').addEventListener('click', async () => {
+  const phone = $('loomy-phone').value.trim();
+  const code = $('loomy-code').value.trim();
+  if (!phone || !code || !loomyMsgId) {
+    return toast(T('请输入手机号并完成验证码验证'), false);
+  }
+  const btn = $('btn-loomy-login');
+  btn.disabled = true;
+  btn.textContent = T('登录中…');
+  try {
+    const r = await api('/api/loomy/sms/login', { json: { phone, code, msgid: loomyMsgId } });
+    toast(T('Loomy 账号登录成功！已存入账号库'));
+    closeModal('m-add');
+    $('loomy-phone').value = '';
+    $('loomy-code').value = '';
+    $('loomy-code-field').style.display = 'none';
+    $('loomy-login-actions').style.display = 'none';
+    if (loomyTimer) { clearInterval(loomyTimer); loomyTimer = null; }
+    $('btn-loomy-sms').disabled = false;
+    $('btn-loomy-sms').textContent = T('获取验证码');
+    await loadAccounts();
+    render();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = T('登录并导入');
+    toast(e.message, false);
+  }
+});
 
 // Qoder 卡片徽章：网页会话（Cookie）缺失或超 7 天时点名提醒——
 // 10Router 的「套餐内 Credits」逐资源包明细依赖它（同 qoderWebSessionNote 口径）。
